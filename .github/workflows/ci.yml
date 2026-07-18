@@ -53,14 +53,24 @@ jobs:
         run: dotnet restore HouseKeeper.slnx
 
       - name: Build
-        run: dotnet build HouseKeeper.slnx --configuration Release --no-restore
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          dotnet build HouseKeeper.slnx \
+            --configuration Release \
+            --no-restore \
+            2>&1 | tee artifacts/build.log
 
       - name: Test
-        run: >-
-          dotnet test HouseKeeper.slnx
-          --configuration Release
-          --no-build
-          --results-directory artifacts/test-results
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet test HouseKeeper.slnx \
+            --configuration Release \
+            --no-build \
+            --results-directory artifacts/test-results \
+            2>&1 | tee artifacts/test.log
 
       - name: Publish API
         run: >-
