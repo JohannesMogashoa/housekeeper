@@ -13,6 +13,11 @@
     <Project Path="src/Modules/HouseKeeper.Modules.Shopping/HouseKeeper.Modules.Shopping.csproj" />
     <Project Path="src/Modules/HouseKeeper.Modules.Tasks/HouseKeeper.Modules.Tasks.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/HouseKeeper.ArchitectureTests/HouseKeeper.ArchitectureTests.csproj" />
+    <Project Path="tests/HouseKeeper.EndToEndTests/HouseKeeper.EndToEndTests.csproj" />
+    <Project Path="tests/HouseKeeper.Web.Tests/HouseKeeper.Web.Tests.csproj" />
+  </Folder>
   <Folder Name="/tests/Modules/">
     <Project Path="tests/Modules/HouseKeeper.Modules.Households.Tests/HouseKeeper.Modules.Households.Tests.csproj" />
   </Folder>
