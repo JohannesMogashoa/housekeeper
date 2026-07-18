@@ -28,6 +28,9 @@
     <PackageVersion Include="Microsoft.Testing.Extensions.CodeCoverage"
                     Version="18.9.0" />
 
+    <PackageVersion Include="AngleSharp"
+                    Version="1.5.2" />
+
     <PackageVersion Include="bunit"
                     Version="2.7.2" />
 
