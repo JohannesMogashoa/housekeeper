@@ -27,8 +27,14 @@ public sealed class HouseholdListTests
         using var context = new BunitContext();
         HouseholdSummary[] households =
         [
-            new(Guid.NewGuid(), "Mogashoa Home", DateTimeOffset.Parse("2026-07-18T18:00:00Z")),
-            new(Guid.NewGuid(), "Weekend Cottage", DateTimeOffset.Parse("2026-07-18T19:00:00Z"))
+            new(
+                Guid.NewGuid(),
+                "Mogashoa Home",
+                new DateTimeOffset(2026, 7, 18, 18, 0, 0, TimeSpan.Zero)),
+            new(
+                Guid.NewGuid(),
+                "Weekend Cottage",
+                new DateTimeOffset(2026, 7, 18, 19, 0, 0, TimeSpan.Zero))
         ];
 
         IRenderedComponent<HouseholdList> rendered = context.Render<HouseholdList>(parameters =>
