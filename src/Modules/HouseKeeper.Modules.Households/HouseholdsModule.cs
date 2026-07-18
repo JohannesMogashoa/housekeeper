@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Security.Claims;
 
 using HouseKeeper.Contracts.Households;
+using HouseKeeper.Modules.Households.Diagnostics;
 using HouseKeeper.Modules.Households.Domain;
 using HouseKeeper.Modules.Households.Persistence;
 
@@ -115,11 +116,7 @@ public static class HouseholdsModule
         await transaction.CommitAsync(cancellationToken);
 
         string traceId = Activity.Current?.TraceId.ToString() ?? "unavailable";
-        logger.LogInformation(
-            "Household {HouseholdId} created by subject {Subject}. TraceId: {TraceId}",
-            householdId,
-            subject,
-            traceId);
+        HouseholdsLog.HouseholdCreated(logger, householdId, subject, traceId);
 
         HouseholdSummary response = new(household.Id, household.Name, household.CreatedAtUtc);
         return Results.Created($"/api/households/{household.Id}", response);
