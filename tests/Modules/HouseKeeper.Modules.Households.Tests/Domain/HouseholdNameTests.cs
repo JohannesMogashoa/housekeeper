@@ -1,5 +1,7 @@
 using HouseKeeper.Modules.Households.Domain;
 
+using Xunit;
+
 namespace HouseKeeper.Modules.Households.Tests.Domain;
 
 public sealed class HouseholdNameTests
