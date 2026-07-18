@@ -4,7 +4,7 @@ set -euo pipefail
 api_base_url="${API_BASE_URL:-http://127.0.0.1:5287}"
 subject="hk14-smoke-user"
 display_name="HK-14 Smoke User"
-household_name="HK-14 Smoke Household ${GITHUB_RUN_ID:-local}-$(date +%s)"
+household_name="${SMOKE_HOUSEHOLD_NAME:-HK-14 Smoke Household ${GITHUB_RUN_ID:-local}-$(date +%s)}"
 
 headers=(
   -H "X-HouseKeeper-Subject: ${subject}"
