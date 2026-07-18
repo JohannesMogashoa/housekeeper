@@ -29,12 +29,12 @@ public sealed class ModuleDependencyTests
     {
         IArchRule rule = Types()
             .That()
-            .ResideInNamespace("HouseKeeper.Modules.Households.Domain", true)
+            .ResideInNamespace("HouseKeeper.Modules.Households.Domain")
             .Should()
             .NotDependOnAny(
                 Types()
                     .That()
-                    .ResideInNamespace("Microsoft.EntityFrameworkCore", true));
+                    .ResideInNamespace("Microsoft.EntityFrameworkCore"));
 
         rule.Check(Architecture);
     }
