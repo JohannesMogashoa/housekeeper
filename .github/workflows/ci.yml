@@ -87,13 +87,16 @@ jobs:
           --output artifacts/web
 
       - name: Apply database migrations
-        run: >-
-          dotnet ef database update
-          --project src/Modules/HouseKeeper.Modules.Households
-          --startup-project src/HouseKeeper.Api
-          --context HouseholdsDbContext
-          --configuration Release
-          --no-build
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet ef database update \
+            --project src/Modules/HouseKeeper.Modules.Households \
+            --startup-project src/HouseKeeper.Api \
+            --context HouseholdsDbContext \
+            --configuration Release \
+            --no-build \
+            2>&1 | tee artifacts/migration.log
 
       - name: Start API
         run: |
