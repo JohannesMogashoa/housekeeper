@@ -1,3 +1,5 @@
+using System.Reflection;
+
 using ArchUnitNET.Domain;
 using ArchUnitNET.Fluent;
 using ArchUnitNET.Loader;
