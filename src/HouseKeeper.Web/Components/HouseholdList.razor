@@ -1,0 +1,27 @@
+@using HouseKeeper.Contracts.Households
+
+@if (Items.Count == 0)
+{
+    <div class="border rounded p-4 text-secondary" data-testid="empty-households">
+        No household has been created for this identity yet.
+    </div>
+}
+else
+{
+    <div class="list-group" data-testid="household-list">
+        @foreach (HouseholdSummary household in Items)
+        {
+            <article class="list-group-item list-group-item-action py-3">
+                <div class="fw-semibold">@household.Name</div>
+                <small class="text-secondary">
+                    Created @household.CreatedAtUtc.ToLocalTime().ToString("g")
+                </small>
+            </article>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<HouseholdSummary> Items { get; set; } = [];
+}
