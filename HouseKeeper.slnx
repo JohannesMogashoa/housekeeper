@@ -1,8 +1,10 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/HouseKeeper.Api/HouseKeeper.Api.csproj" />
+    <Project Path="src/HouseKeeper.AppHost/HouseKeeper.AppHost.csproj" />
     <Project Path="src/HouseKeeper.BuildingBlocks/HouseKeeper.BuildingBlocks.csproj" />
     <Project Path="src/HouseKeeper.Contracts/HouseKeeper.Contracts.csproj" />
+    <Project Path="src/HouseKeeper.ServiceDefaults/HouseKeeper.ServiceDefaults.csproj" />
     <Project Path="src/HouseKeeper.Web/HouseKeeper.Web.csproj" />
   </Folder>
   <Folder Name="/src/Modules/">
