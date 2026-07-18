@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.OpenApi" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HouseKeeper.Contracts\HouseKeeper.Contracts.csproj" />
+    <ProjectReference Include="..\HouseKeeper.BuildingBlocks\HouseKeeper.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\Modules\HouseKeeper.Modules.Households\HouseKeeper.Modules.Households.csproj" />
+    <ProjectReference Include="..\Modules\HouseKeeper.Modules.Tasks\HouseKeeper.Modules.Tasks.csproj" />
+    <ProjectReference Include="..\Modules\HouseKeeper.Modules.Maintenance\HouseKeeper.Modules.Maintenance.csproj" />
+    <ProjectReference Include="..\Modules\HouseKeeper.Modules.Shopping\HouseKeeper.Modules.Shopping.csproj" />
+    <ProjectReference Include="..\Modules\HouseKeeper.Modules.Notifications\HouseKeeper.Modules.Notifications.csproj" />
+    <ProjectReference Include="..\Modules\HouseKeeper.Modules.Attachments\HouseKeeper.Modules.Attachments.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/HouseKeeper.Api/HouseKeeper.Api.csproj" />
+    <Project Path="src/HouseKeeper.BuildingBlocks/HouseKeeper.BuildingBlocks.csproj" />
+    <Project Path="src/HouseKeeper.Contracts/HouseKeeper.Contracts.csproj" />
+    <Project Path="src/HouseKeeper.Web/HouseKeeper.Web.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/">
+    <Project Path="src/Modules/HouseKeeper.Modules.Attachments/HouseKeeper.Modules.Attachments.csproj" />
+    <Project Path="src/Modules/HouseKeeper.Modules.Households/HouseKeeper.Modules.Households.csproj" />
+    <Project Path="src/Modules/HouseKeeper.Modules.Maintenance/HouseKeeper.Modules.Maintenance.csproj" />
+    <Project Path="src/Modules/HouseKeeper.Modules.Notifications/HouseKeeper.Modules.Notifications.csproj" />
+    <Project Path="src/Modules/HouseKeeper.Modules.Shopping/HouseKeeper.Modules.Shopping.csproj" />
+    <Project Path="src/Modules/HouseKeeper.Modules.Tasks/HouseKeeper.Modules.Tasks.csproj" />
+  </Folder>
+</Solution>

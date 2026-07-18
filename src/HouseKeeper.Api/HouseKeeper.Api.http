@@ -1,0 +1,6 @@
+@HouseKeeper.Api_HostAddress = http://localhost:5287
+
+GET {{HouseKeeper.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
