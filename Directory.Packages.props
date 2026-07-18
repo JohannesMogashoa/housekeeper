@@ -17,10 +17,10 @@
                     Version="10.0.10" />
 
     <PackageVersion Include="Microsoft.EntityFrameworkCore"
-                    Version="10.0.10" />
+                    Version="10.0.4" />
 
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design"
-                    Version="10.0.10" />
+                    Version="10.0.4" />
 
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL"
                     Version="10.0.3" />
