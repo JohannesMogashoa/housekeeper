@@ -51,7 +51,12 @@ jobs:
         run: dotnet tool restore
 
       - name: Restore dependencies
-        run: dotnet restore HouseKeeper.slnx
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          dotnet restore HouseKeeper.slnx \
+            2>&1 | tee artifacts/restore.log
 
       - name: Build
         shell: bash
