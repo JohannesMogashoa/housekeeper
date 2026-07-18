@@ -7,7 +7,7 @@ namespace HouseKeeper.Modules.Households.Tests.Domain;
 public sealed class HouseholdNameTests
 {
     [Fact]
-    public void TryCreate_NormalizesValidName()
+    public void TryCreateNormalizesValidName()
     {
         bool created = HouseholdName.TryCreate(
             "  Mogashoa Home  ",
@@ -25,7 +25,7 @@ public sealed class HouseholdNameTests
     [InlineData("")]
     [InlineData(" ")]
     [InlineData("A")]
-    public void TryCreate_RejectsMissingOrShortName(string? candidate)
+    public void TryCreateRejectsMissingOrShortName(string? candidate)
     {
         bool created = HouseholdName.TryCreate(
             candidate,
@@ -38,7 +38,7 @@ public sealed class HouseholdNameTests
     }
 
     [Fact]
-    public void TryCreate_RejectsNameOverMaximumLength()
+    public void TryCreateRejectsNameOverMaximumLength()
     {
         string candidate = new('H', HouseholdName.MaxLength + 1);
 
