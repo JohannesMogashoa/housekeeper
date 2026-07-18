@@ -12,7 +12,7 @@ public sealed class HouseholdsDbContextModelSnapshot : ModelSnapshot
     {
         modelBuilder
             .HasDefaultSchema(HouseholdsDbContext.Schema)
-            .HasAnnotation("ProductVersion", "10.0.10")
+            .HasAnnotation("ProductVersion", "10.0.4")
             .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
         NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
