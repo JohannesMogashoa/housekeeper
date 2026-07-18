@@ -1,0 +1,116 @@
+name: Continuous Integration
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Build, test, migrate, and smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:18.4
+        env:
+          POSTGRES_DB: housekeeper
+          POSTGRES_USER: housekeeper
+          POSTGRES_PASSWORD: housekeeper_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U housekeeper -d housekeeper"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      ConnectionStrings__HouseKeeper: Host=127.0.0.1;Port=5432;Database=housekeeper;Username=housekeeper;Password=housekeeper_ci;Include Error Detail=true
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.300
+          cache: true
+          cache-dependency-path: Directory.Packages.props
+
+      - name: Restore local tools
+        run: dotnet tool restore
+
+      - name: Restore dependencies
+        run: dotnet restore HouseKeeper.slnx
+
+      - name: Build
+        run: dotnet build HouseKeeper.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: >-
+          dotnet test HouseKeeper.slnx
+          --configuration Release
+          --no-build
+          --results-directory artifacts/test-results
+
+      - name: Publish API
+        run: >-
+          dotnet publish src/HouseKeeper.Api/HouseKeeper.Api.csproj
+          --configuration Release
+          --no-build
+          --output artifacts/api
+
+      - name: Publish web application
+        run: >-
+          dotnet publish src/HouseKeeper.Web/HouseKeeper.Web.csproj
+          --configuration Release
+          --no-build
+          --output artifacts/web
+
+      - name: Apply database migrations
+        run: >-
+          dotnet ef database update
+          --project src/Modules/HouseKeeper.Modules.Households
+          --startup-project src/HouseKeeper.Api
+          --context HouseholdsDbContext
+          --configuration Release
+          --no-build
+
+      - name: Start API
+        run: |
+          ASPNETCORE_ENVIRONMENT=Development \
+          dotnet artifacts/api/HouseKeeper.Api.dll \
+            --urls http://127.0.0.1:5287 \
+            > artifacts/api.log 2>&1 &
+          echo $! > artifacts/api.pid
+
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:5287/health/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+
+          cat artifacts/api.log
+          exit 1
+
+      - name: Run walking-skeleton smoke test
+        run: bash scripts/smoke.sh
+
+      - name: Upload validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: housekeeper-validation-${{ github.run_id }}
+          path: artifacts
+          if-no-files-found: warn
+          retention-days: 14
