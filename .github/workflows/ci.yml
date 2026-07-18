@@ -13,7 +13,7 @@ jobs:
   validate:
     name: Build, test, migrate, and smoke
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
 
     services:
       postgres:
@@ -34,6 +34,7 @@ jobs:
       ConnectionStrings__HouseKeeper: Host=127.0.0.1;Port=5432;Database=housekeeper;Username=housekeeper;Password=housekeeper_ci;Include Error Detail=true
       DOTNET_NOLOGO: true
       DOTNET_CLI_TELEMETRY_OPTOUT: true
+      SMOKE_HOUSEHOLD_NAME: HK-14 Smoke Household ${{ github.run_id }}
 
     steps:
       - name: Check out repository
@@ -55,22 +56,41 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          mkdir -p artifacts
+          mkdir -p artifacts/test-results
           set -o pipefail
           dotnet build HouseKeeper.slnx \
             --configuration Release \
             --no-restore \
             2>&1 | tee artifacts/build.log
 
-      - name: Test
+      - name: Run fast tests and collect coverage
         shell: bash
         run: |
           set -o pipefail
-          dotnet test HouseKeeper.slnx \
+
+          dotnet test tests/Modules/HouseKeeper.Modules.Households.Tests/HouseKeeper.Modules.Households.Tests.csproj \
             --configuration Release \
             --no-build \
             --results-directory artifacts/test-results \
-            2>&1 | tee artifacts/test.log
+            -- \
+            --coverage \
+            --coverage-output "${GITHUB_WORKSPACE}/artifacts/test-results/households.cobertura.xml" \
+            --coverage-output-format cobertura \
+            2>&1 | tee artifacts/households-tests.log
+
+          dotnet test tests/HouseKeeper.Web.Tests/HouseKeeper.Web.Tests.csproj \
+            --configuration Release \
+            --no-build \
+            --results-directory artifacts/test-results \
+            2>&1 | tee artifacts/web-tests.log
+
+          dotnet test tests/HouseKeeper.ArchitectureTests/HouseKeeper.ArchitectureTests.csproj \
+            --configuration Release \
+            --no-build \
+            --results-directory artifacts/test-results \
+            2>&1 | tee artifacts/architecture-tests.log
+
+          test -s artifacts/test-results/households.cobertura.xml
 
       - name: Publish API
         run: >-
@@ -98,7 +118,8 @@ jobs:
             --no-build \
             2>&1 | tee artifacts/migration.log
 
-      - name: Start API
+      - name: Start published applications
+        shell: bash
         run: |
           ASPNETCORE_ENVIRONMENT=Development \
           dotnet artifacts/api/HouseKeeper.Api.dll \
@@ -106,18 +127,72 @@ jobs:
             > artifacts/api.log 2>&1 &
           echo $! > artifacts/api.pid
 
+          python3 -m http.server 5136 \
+            --bind 127.0.0.1 \
+            --directory artifacts/web/wwwroot \
+            > artifacts/web.log 2>&1 &
+          echo $! > artifacts/web.pid
+
           for attempt in {1..30}; do
-            if curl --fail --silent http://127.0.0.1:5287/health/ready >/dev/null; then
+            if curl --fail --silent http://127.0.0.1:5287/health/ready >/dev/null \
+              && curl --fail --silent http://localhost:5136 >/dev/null; then
               exit 0
             fi
             sleep 1
           done
 
           cat artifacts/api.log
+          cat artifacts/web.log
           exit 1
 
-      - name: Run walking-skeleton smoke test
+      - name: Run API smoke journey
         run: bash scripts/smoke.sh
+
+      - name: Install Playwright Chromium
+        run: >-
+          pwsh tests/HouseKeeper.EndToEndTests/bin/Release/net10.0/playwright.ps1
+          install --with-deps chromium
+
+      - name: Run browser journey
+        shell: bash
+        env:
+          HOUSEKEEPER_WEB_BASE_URL: http://localhost:5136
+        run: |
+          set -o pipefail
+          dotnet test tests/HouseKeeper.EndToEndTests/HouseKeeper.EndToEndTests.csproj \
+            --configuration Release \
+            --no-build \
+            --results-directory artifacts/test-results \
+            2>&1 | tee artifacts/end-to-end-tests.log
+
+      - name: Restart API and prove persistence
+        shell: bash
+        run: |
+          kill "$(cat artifacts/api.pid)"
+
+          for attempt in {1..15}; do
+            if ! kill -0 "$(cat artifacts/api.pid)" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          ASPNETCORE_ENVIRONMENT=Development \
+          dotnet artifacts/api/HouseKeeper.Api.dll \
+            --urls http://127.0.0.1:5287 \
+            > artifacts/api-restart.log 2>&1 &
+          echo $! > artifacts/api.pid
+
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:5287/health/ready >/dev/null; then
+              bash scripts/assert-persistence.sh
+              exit 0
+            fi
+            sleep 1
+          done
+
+          cat artifacts/api-restart.log
+          exit 1
 
       - name: Upload validation artifacts
         if: always()
