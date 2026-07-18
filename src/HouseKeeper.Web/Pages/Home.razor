@@ -1,7 +1,211 @@
-﻿@page "/"
+@page "/"
 
-<PageTitle>Home</PageTitle>
+@using HouseKeeper.Contracts.Households
+@using HouseKeeper.Web.Services
 
-<h1>Hello, world!</h1>
+@inject DevelopmentSession Session
+@inject HouseKeeperApiClient ApiClient
 
-Welcome to your new app.
+<PageTitle>HouseKeeper</PageTitle>
+
+<div class="container py-4" style="max-width: 48rem;">
+    <header class="mb-4">
+        <p class="text-uppercase text-secondary fw-semibold mb-1">HouseKeeper</p>
+        <h1>Know what your home needs today.</h1>
+        <p class="lead text-secondary">
+            This walking skeleton proves authentication, household ownership,
+            PostgreSQL persistence, and the installable web application end to end.
+        </p>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger" role="alert" data-testid="error-message">
+            @errorMessage
+        </div>
+    }
+
+    @if (identity is null)
+    {
+        <section class="card shadow-sm">
+            <div class="card-body p-4">
+                <h2 class="h4">Development sign-in</h2>
+                <p class="text-secondary">
+                    Enter a display name. A stable development identity will be stored
+                    in this browser and authenticated by the local API.
+                </p>
+
+                <label class="form-label" for="display-name">Display name</label>
+                <input id="display-name"
+                       class="form-control"
+                       data-testid="display-name"
+                       maxlength="120"
+                       @bind="displayName"
+                       @bind:event="oninput" />
+
+                <button class="btn btn-primary mt-3"
+                        data-testid="sign-in"
+                        disabled="@isBusy"
+                        @onclick="SignInAsync">
+                    @(isBusy ? "Signing in…" : "Continue")
+                </button>
+            </div>
+        </section>
+    }
+    else
+    {
+        <section class="d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-3 mb-4">
+            <div>
+                <span class="text-secondary">Signed in as</span>
+                <strong data-testid="current-user">@identity.DisplayName</strong>
+            </div>
+            <button class="btn btn-outline-secondary btn-sm"
+                    disabled="@isBusy"
+                    @onclick="SignOutAsync">
+                Sign out
+            </button>
+        </section>
+
+        <section class="card shadow-sm mb-4">
+            <div class="card-body p-4">
+                <h2 class="h4">Create your household</h2>
+                <p class="text-secondary">
+                    The API creates the household and your owner membership in one transaction.
+                </p>
+
+                <label class="form-label" for="household-name">Household name</label>
+                <input id="household-name"
+                       class="form-control"
+                       data-testid="household-name"
+                       maxlength="120"
+                       @bind="householdName"
+                       @bind:event="oninput" />
+
+                <button class="btn btn-primary mt-3"
+                        data-testid="create-household"
+                        disabled="@isBusy"
+                        @onclick="CreateHouseholdAsync">
+                    @(isBusy ? "Saving…" : "Create household")
+                </button>
+            </div>
+        </section>
+
+        <section aria-labelledby="households-heading">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <h2 id="households-heading" class="h4 mb-0">Your households</h2>
+                <button class="btn btn-link btn-sm"
+                        disabled="@isBusy"
+                        @onclick="LoadHouseholdsAsync">
+                    Refresh
+                </button>
+            </div>
+
+            @if (households.Count == 0)
+            {
+                <div class="border rounded p-4 text-secondary" data-testid="empty-households">
+                    No household has been created for this identity yet.
+                </div>
+            }
+            else
+            {
+                <div class="list-group" data-testid="household-list">
+                    @foreach (HouseholdSummary household in households)
+                    {
+                        <article class="list-group-item list-group-item-action py-3">
+                            <div class="fw-semibold">@household.Name</div>
+                            <small class="text-secondary">
+                                Created @household.CreatedAtUtc.ToLocalTime().ToString("g")
+                            </small>
+                        </article>
+                    }
+                </div>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private DevelopmentIdentity? identity;
+    private IReadOnlyList<HouseholdSummary> households = [];
+    private string displayName = string.Empty;
+    private string householdName = string.Empty;
+    private string? errorMessage;
+    private bool isBusy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        identity = await Session.LoadAsync();
+        if (identity is not null)
+        {
+            await ExecuteAsync(LoadHouseholdsCoreAsync);
+        }
+    }
+
+    private Task SignInAsync() => ExecuteAsync(async () =>
+    {
+        identity = await Session.SignInAsync(displayName);
+        _ = await ApiClient.AuthenticateAsync(identity);
+        households = await ApiClient.ListHouseholdsAsync(identity);
+        displayName = string.Empty;
+    });
+
+    private Task SignOutAsync() => ExecuteAsync(async () =>
+    {
+        await Session.SignOutAsync();
+        identity = null;
+        households = [];
+        householdName = string.Empty;
+    });
+
+    private Task CreateHouseholdAsync() => ExecuteAsync(async () =>
+    {
+        if (identity is null)
+        {
+            throw new InvalidOperationException("Sign in before creating a household.");
+        }
+
+        HouseholdSummary created = await ApiClient.CreateHouseholdAsync(
+            identity,
+            householdName);
+        households = [.. households, created];
+        householdName = string.Empty;
+    });
+
+    private Task LoadHouseholdsAsync() => ExecuteAsync(LoadHouseholdsCoreAsync);
+
+    private async Task LoadHouseholdsCoreAsync()
+    {
+        if (identity is null)
+        {
+            households = [];
+            return;
+        }
+
+        _ = await ApiClient.AuthenticateAsync(identity);
+        households = await ApiClient.ListHouseholdsAsync(identity);
+    }
+
+    private async Task ExecuteAsync(Func<Task> action)
+    {
+        if (isBusy)
+        {
+            return;
+        }
+
+        isBusy = true;
+        errorMessage = null;
+
+        try
+        {
+            await action();
+        }
+        catch (Exception exception)
+        {
+            errorMessage = exception.Message;
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+}
