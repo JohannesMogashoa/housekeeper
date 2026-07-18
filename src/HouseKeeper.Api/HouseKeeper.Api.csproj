@@ -14,6 +14,7 @@
   <ItemGroup>
     <ProjectReference Include="..\HouseKeeper.Contracts\HouseKeeper.Contracts.csproj" />
     <ProjectReference Include="..\HouseKeeper.BuildingBlocks\HouseKeeper.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\HouseKeeper.ServiceDefaults\HouseKeeper.ServiceDefaults.csproj" />
     <ProjectReference Include="..\Modules\HouseKeeper.Modules.Households\HouseKeeper.Modules.Households.csproj" />
     <ProjectReference Include="..\Modules\HouseKeeper.Modules.Tasks\HouseKeeper.Modules.Tasks.csproj" />
     <ProjectReference Include="..\Modules\HouseKeeper.Modules.Maintenance\HouseKeeper.Modules.Maintenance.csproj" />
