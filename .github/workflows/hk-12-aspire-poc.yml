@@ -1,0 +1,32 @@
+name: HK-12 Aspire POC
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'src/HouseKeeper.AppHost/**'
+      - 'src/HouseKeeper.ServiceDefaults/**'
+      - 'src/HouseKeeper.Api/**'
+      - 'Directory.Packages.props'
+      - 'HouseKeeper.slnx'
+      - '.github/workflows/hk-12-aspire-poc.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore HouseKeeper.slnx
+
+      - name: Build
+        run: dotnet build HouseKeeper.slnx --configuration Release --no-restore
