@@ -105,11 +105,17 @@ jobs:
           --output artifacts/api
 
       - name: Publish web application
-        run: >-
-          dotnet publish src/HouseKeeper.Web/HouseKeeper.Web.csproj
-          --configuration Release
-          --no-build
-          --output artifacts/web
+        shell: bash
+        run: |
+          dotnet publish src/HouseKeeper.Web/HouseKeeper.Web.csproj \
+            --configuration Release \
+            --no-restore \
+            --output artifacts/web
+
+          if grep --fixed-strings --quiet '#[.{fingerprint}]' artifacts/web/wwwroot/index.html; then
+            echo 'Published index.html contains unresolved static-asset fingerprints.' >&2
+            exit 1
+          fi
 
       - name: Apply database migrations
         shell: bash
