@@ -80,16 +80,16 @@ When Codex reviews a pull request, prioritize correctness over style in this ord
 
 Report only actionable findings supported by changed code, surrounding implementation, or missing required evidence.
 
-Rank findings as:
+Use Codex's native priority labels:
 
-- **Blocker** — credible security boundary breach, cross-household exposure, secret exposure, data loss/corruption, unsafe migration, or fundamental architecture violation.
-- **High** — likely production failure, missing authorization, broken invariant, non-idempotent side effect, concurrency/restart defect, or absent critical test.
-- **Medium** — material reliability, observability, accessibility, compatibility, or maintainability defect that should be resolved before or immediately after merge.
-- **Low** — narrowly scoped improvement with concrete value; never use this category for personal preference.
+- **[P0]** — stop-ship defect causing a credible security boundary breach, cross-household exposure, secret exposure, data loss/corruption, unsafe migration, or repository-wide failure.
+- **[P1]** — urgent defect likely to cause production failure, missing authorization, a broken invariant, non-idempotent side effect, concurrency/restart failure, or absent critical test.
+- **[P2]** — material correctness, reliability, observability, accessibility, compatibility, or maintainability defect that should normally be resolved before merge.
+- **[P3]** — narrowly scoped, non-urgent improvement with concrete value; never use this priority for personal preference or optional style.
 
 For every finding include:
 
-1. severity;
+1. priority;
 2. file and line/range;
 3. violated invariant or issue requirement;
 4. realistic failure mode;
