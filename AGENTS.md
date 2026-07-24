@@ -1,40 +1,108 @@
-# HouseKeeper agent operating guide
+# HouseKeeper Codex operating and review guide
 
-This file applies to every AI agent working in the repository. The dedicated pull-request reviewer is defined in `.github/agents/housekeeper-reviewer.agent.md`.
+This file is the root instruction contract for OpenAI Codex in this repository. It applies to Codex cloud tasks, GitHub pull-request reviews, CLI/IDE sessions, and any delegated implementation work.
+
+More specific `AGENTS.md` files deeper in the repository add rules for their directory trees. Apply the root rules and every applicable nested file.
 
 ## Start with the work item
 
-- Read the linked HK GitHub issue completely before changing or reviewing code.
-- Preserve the requested outcome, dependencies, exclusions, acceptance criteria, and completion evidence.
-- Read `docs/architecture/technical-recommendation.md` and `docs/architecture/adr/README.md` before making architectural decisions.
-- Do not silently supersede an accepted ADR. Propose a new decision and explain consequences.
+Before changing or reviewing code:
 
-## Work within the architecture
+1. Read the linked HK GitHub issue completely.
+2. Identify the required outcome, dependencies, exclusions, acceptance criteria, and completion evidence.
+3. Read `docs/architecture/technical-recommendation.md` and `docs/architecture/adr/README.md`.
+4. Inspect the complete diff and enough surrounding implementation to understand behavior.
+5. Do not silently supersede an accepted ADR. Propose and justify a new decision.
 
-- Keep the standalone PWA, API composition host, capability modules, contracts, and module-owned schemas distinct.
-- Never bypass application-owned household authorization.
-- Do not introduce cross-module implementation references, direct table access, or shared mutable domain entities.
-- Keep migrations explicit and outside normal production API startup.
-- Preserve idempotency, concurrency, restart recovery, and failure classification where the work item depends on them.
+## Architecture invariants
+
+- HouseKeeper remains a .NET 10 modular monolith with a standalone Blazor WebAssembly PWA, an ASP.NET Core API composition host, and PostgreSQL.
+- `HouseKeeper.Api` owns composition, middleware, endpoint mapping, authentication plumbing, and transport adaptation. It does not own domain rules or module persistence.
+- Each `HouseKeeper.Modules.*` assembly owns one business capability and must not reference another module implementation, entity, repository, infrastructure namespace, table, or `DbContext`.
+- Cross-module synchronous behavior uses purpose-specific contracts. Cross-module reactions use immutable, versioned integration events.
+- Each persistent module owns its PostgreSQL schema, EF Core context, migrations, indexes, constraints, and transaction boundary.
+- `HouseKeeper.Contracts` contains dependency-light messages only. Do not expose aggregates, EF types, `IQueryable`, provider SDK types, or mutable shared business objects.
+- Shared building blocks require proven identical technical semantics across at least two modules. Do not create generic repositories or speculative abstractions.
+
+## Security and household isolation
+
+- Treat the PWA, browser storage, request payloads, provider callbacks, files, and all client claims as untrusted.
+- Authentication proves identity. Application-owned household membership and role state determines authorization.
+- Protected operations are default-deny and verify household scope before reading or mutating business data.
+- Add negative tests for anonymous, non-member, wrong-role, removed-member, and cross-household attempts when relevant.
+- Keep access tokens, authorization codes, invitation tokens, SAS URLs, push endpoints/secrets, signing keys, database credentials, file contents, and unnecessary personal data out of logs, telemetry, errors, artifacts, and client assets.
+
+## Data, migrations, and reliability
+
+- Apply migrations explicitly through developer or protected deployment workflows. The API must not mutate production schemas during normal startup.
+- Cross-module references are scalar IDs without ORM navigation properties or cross-schema cascades.
+- Preserve historical meaning using versioned definitions or append-only evidence where required.
+- Replayable mutations use the approved operation-ID and idempotency protocol.
+- Durable cross-module events use transactional outbox and idempotent inbox semantics.
+- Workers use bounded batches, leases, cancellation, retry classification, backoff, terminal failure handling, observability, and restart recovery.
+- Never claim exactly-once external delivery.
+- Review response loss, duplicate delivery, concurrent execution, process termination, expired leases, stale membership, timezone behavior, and provider failure where relevant.
 
 ## Change discipline
 
 - Make the smallest coherent change that fully satisfies the issue.
-- Do not add speculative abstractions, generic repositories, premature services, unrelated refactors, or silent scope expansion.
-- Keep package versions central and vulnerability auditing enabled.
-- Keep logs, telemetry, errors, test artifacts, and browser storage free of secrets and sensitive grants.
-- Update code-adjacent documentation, diagrams, scripts, runbooks, and migrations when behavior changes.
+- Do not add unrelated refactors, premature services, hidden scope expansion, or broad suppressions.
+- Keep package versions central, dependencies pinned or deliberately serviced, and vulnerability auditing enabled.
+- Update code-adjacent documentation, diagrams, migrations, scripts, runbooks, and operational notes when behavior changes.
+- Preserve Bash and PowerShell parity for supported cross-platform workflows.
 
 ## Verification
 
-- Run the risk-appropriate test layers and the standard warnings-as-errors build.
-- Add negative authorization and cross-household tests for protected features.
-- Add real PostgreSQL tests for persistence semantics.
-- Add failure-injection/restart tests for idempotency, outbox/inbox, workers, or external providers.
-- Add bUnit and published Playwright journeys for user-facing PWA behavior.
-- Record exact commands, CI runs, residual gaps, and manual evidence in the pull request template.
+Use the smallest complete test portfolio for the changed risk:
 
-## Review
+- xUnit v3 on Microsoft Testing Platform v2 for domain, application, and integration behavior;
+- real PostgreSQL for persistence, migration, transaction, locking, and concurrency semantics;
+- architecture tests for assembly and dependency boundaries;
+- API and authorization tests for protected operations;
+- bUnit for deterministic Razor component behavior;
+- Playwright against published artifacts for critical browser journeys;
+- failure-injection and restart tests for idempotency, outbox/inbox, workers, and provider failures;
+- Bicep validation, `what-if`, deployment smoke, rollback, and recovery evidence for infrastructure changes.
 
-- Use the `housekeeper-reviewer` custom agent for a dedicated review session.
-- Treat AI review as supplemental evidence. Final merge requires deliberate human approval.
+A green pipeline is supporting evidence, not proof of correctness.
+
+## Pull-request review contract
+
+When Codex reviews a pull request, prioritize correctness over style in this order:
+
+1. cross-household isolation, authorization, and secret safety;
+2. data integrity, migration safety, concurrency, idempotency, and restart recovery;
+3. modular-monolith dependencies, schema ownership, and contract boundaries;
+4. PWA/offline correctness, browser storage isolation, accessibility, and service-worker safety;
+5. external-provider failure handling and durable worker behavior;
+6. test adequacy, observability, deployment safety, rollback, and documentation drift;
+7. maintainability only when there is a concrete failure or change-cost impact.
+
+Report only actionable findings supported by changed code, surrounding implementation, or missing required evidence.
+
+Rank findings as:
+
+- **Blocker** — credible security boundary breach, cross-household exposure, secret exposure, data loss/corruption, unsafe migration, or fundamental architecture violation.
+- **High** — likely production failure, missing authorization, broken invariant, non-idempotent side effect, concurrency/restart defect, or absent critical test.
+- **Medium** — material reliability, observability, accessibility, compatibility, or maintainability defect that should be resolved before or immediately after merge.
+- **Low** — narrowly scoped improvement with concrete value; never use this category for personal preference.
+
+For every finding include:
+
+1. severity;
+2. file and line/range;
+3. violated invariant or issue requirement;
+4. realistic failure mode;
+5. smallest safe correction;
+6. test or evidence required to prove the correction.
+
+Separate defects from questions and non-blocking suggestions. Avoid vague "consider" comments, praise-only noise, speculative abstractions, and unrelated refactors.
+
+When no material finding exists, state that clearly, summarize the evidence reviewed, and list residual manual validation gaps.
+
+## Codex GitHub review usage
+
+- Request an on-demand review by commenting `@codex review` on the pull request.
+- Add targeted focus when useful, for example `@codex review for household authorization, migration safety, and restart recovery`.
+- Re-run review after material changes or use Codex automatic repository reviews when enabled.
+- Codex review supplements the full CI pipeline and deliberate human approval; it replaces neither.
