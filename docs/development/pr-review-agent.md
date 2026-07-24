@@ -1,59 +1,66 @@
-# HouseKeeper pull-request review agent
+# HouseKeeper Codex pull-request review
 
-HouseKeeper uses a repository-owned GitHub Copilot custom agent and review instructions to make pull-request feedback consistent with the accepted architecture and Foundation backlog.
+HouseKeeper uses OpenAI Codex code review for repository-aware pull-request analysis. Codex supplements—not replaces—the author's verification, the complete CI pipeline, and deliberate human approval.
 
-The AI reviewer supplements—not replaces—the author’s verification and final human approval.
+## Why Codex
 
-## Repository configuration
+Codex can review a pull request against its stated intent, inspect the broader repository rather than only isolated diff fragments, and run or reason about tests and dependencies. It can review automatically when enabled for the repository or on demand through a pull-request mention.
+
+HouseKeeper does not require GitHub Copilot for this workflow.
+
+## Repository instruction model
+
+Codex reads `AGENTS.md` guidance from the repository. The root file defines universal architecture and review requirements, while deeper files add rules for their directory trees.
 
 | File | Responsibility |
 |---|---|
-| `.github/agents/housekeeper-reviewer.agent.md` | Defines the read-only `housekeeper-reviewer` custom agent and its finding/output contract |
-| `.github/copilot-instructions.md` | Repository-wide architecture, security, persistence, reliability, PWA, testing, and review rules |
-| `.github/instructions/dotnet-modules-review.instructions.md` | Applies detailed module, C#, EF Core, PostgreSQL, and worker checks to .NET files |
-| `.github/instructions/pwa-review.instructions.md` | Applies browser trust, offline, accessibility, installability, and Playwright checks to PWA files |
-| `.github/instructions/infrastructure-review.instructions.md` | Applies identity, Bicep, workflow, migration, deployment, rollback, and cost checks to infrastructure files |
-| `.github/pull_request_template.md` | Requires the author to expose issue linkage, risk, tests, migrations, screenshots, and operational evidence |
+| `AGENTS.md` | Root architecture, security, reliability, testing, and review-output contract |
+| `src/AGENTS.md` | .NET, module boundaries, domain/application behavior, EF Core, PostgreSQL, and worker rules |
+| `src/HouseKeeper.Web/AGENTS.md` | PWA trust boundary, offline storage, accessibility, service worker, installability, and browser tests |
+| `tests/HouseKeeper.Web.Tests/AGENTS.md` | PWA component-test isolation, offline states, accessibility, and recovery coverage |
+| `tests/HouseKeeper.EndToEndTests/AGENTS.md` | Published-PWA browser, service-worker, restart, mobile, and household-isolation coverage |
+| `deploy/AGENTS.md` | Azure identity, Bicep, environments, migrations, deployment, rollback, recovery, and cost rules |
+| `scripts/AGENTS.md` | Local/CI orchestration isolation, disposable infrastructure, health/readiness, smoke, and persistence checks |
+| `.github/AGENTS.md` | Workflow permissions, CI integrity, deployment safety, PR evidence, and Codex-review usage |
+| `.github/pull_request_template.md` | Author evidence contract for linked work, risks, migrations, tests, UX, operations, and reviewer focus |
 
-GitHub loads the custom agent from `.github/agents/*.agent.md` after the profile is merged to the default branch. Copilot code review uses the repository and path-specific instructions when reviewing applicable changes.
+The nearest applicable `AGENTS.md` adds specificity; it does not cancel the root invariants.
 
-## Manual deep review
+## On-demand GitHub review
 
-After this configuration is merged:
-
-1. Open GitHub Copilot Agents for the `JohannesMogashoa/housekeeper` repository.
-2. Select `housekeeper-reviewer` from the agent dropdown.
-3. Ask it to review the target pull request, including the PR number and linked HK issue.
-4. Require the agent to inspect the complete diff, surrounding implementation, tests, migrations, workflows, and architecture documentation.
-5. Transfer actionable findings to the PR as review comments or resolve them in the implementation branch.
-
-Suggested prompt:
+After the repository is connected to Codex, comment on a pull request:
 
 ```text
-Review pull request #<number> against its linked HK issue and the HouseKeeper architecture. Report only actionable Blocker, High, Medium, or Low findings with file/line evidence, failure mode, smallest safe correction, and proof required. If no material findings exist, state the residual validation gaps.
+@codex review
 ```
 
-## Requesting Copilot code review on a PR
+Add a focused request when the change has a dominant risk:
 
-For an individual pull request, request GitHub Copilot under the PR's **Reviewers** section. Re-request review after significant corrections or use the repository ruleset option described below to review new pushes automatically.
+```text
+@codex review for household authorization, PostgreSQL migration safety, idempotency, and API restart recovery
+```
 
-## One-time automatic-review activation
+Codex posts its analysis to the pull request. If it proposes a correction, keep the discussion in the review thread and either implement the change deliberately or ask Codex to prepare a patch for human review.
 
-Automatic reviewer assignment is a repository ruleset setting and is not encoded by the instruction files themselves.
+Request another review after material changes unless automatic review of new pushes is enabled.
 
-1. Open the repository on GitHub.
-2. Go to **Settings → Rules → Rulesets**.
-3. Create or edit a branch ruleset targeting the default branch or the desired PR targets.
-4. Enable **Automatically request Copilot code review**.
-5. Enable **Review new pushes** so corrected commits receive another review.
-6. Decide deliberately whether draft pull requests should be reviewed.
-7. Keep repository custom instructions enabled under **Settings → Copilot → Code review**.
+## Automatic GitHub review
 
-The reviewer agent profile defines a specialist available for explicit sessions. The automatic review ruleset invokes GitHub Copilot code review, which consumes the same repository/path review instructions.
+Automatic review is enabled in Codex, not through GitHub Copilot files or a repository ruleset.
+
+1. Open Codex and connect the GitHub account or organization that owns `JohannesMogashoa/housekeeper`.
+2. Ensure the ChatGPT GitHub connector is authorized for the repository.
+3. Create or select the Codex environment for HouseKeeper.
+4. Open the Codex code-review settings.
+5. Enable automatic review for the HouseKeeper repository or the applicable team/personal pull requests.
+6. Choose whether reviews should run only when a draft becomes ready or also after subsequent pushes.
+7. Open a small test pull request and verify that Codex posts a review using the repository `AGENTS.md` policy.
+
+Exact labels can evolve with the Codex interface. The invariant is that the repository is enabled for Codex code review through Codex settings; no Copilot reviewer or `.github/agents/*.agent.md` profile is required.
 
 ## Review contract
 
-The reviewer prioritizes:
+Codex prioritizes:
 
 1. cross-household isolation, authorization, and secret safety;
 2. data integrity, migration safety, concurrency, idempotency, and restart recovery;
@@ -63,40 +70,48 @@ The reviewer prioritizes:
 6. test adequacy, observability, deployment safety, rollback, and documentation drift;
 7. maintainability issues with a concrete failure or change-cost impact.
 
-Every finding should include:
+Every material finding should include:
 
-- severity: Blocker, High, Medium, or Low;
+- native priority: `[P0]`, `[P1]`, `[P2]`, or `[P3]`;
 - changed file and line/range;
 - violated invariant or issue requirement;
 - realistic failure mode;
 - smallest safe correction;
 - test or evidence needed to prove the correction.
 
-Questions and non-blocking suggestions remain separate from defects. The reviewer avoids speculative abstractions, unrelated refactors, personal style preferences, and praise-only noise.
+Priority meanings are defined in the root `AGENTS.md`: `[P0]` is stop-ship, `[P1]` urgent, `[P2]` material and normally pre-merge, and `[P3]` narrowly scoped and non-urgent.
+
+Questions and non-blocking suggestions remain separate from defects. Codex should avoid speculative abstractions, unrelated refactors, personal style preferences, vague suggestions, and praise-only noise.
 
 ## Author workflow
 
 Before requesting review:
 
 1. Link the canonical HK GitHub issue and Notion task in the PR.
-2. Complete the pull-request template rather than deleting irrelevant-looking sections without explanation.
+2. Complete the pull-request template instead of deleting sections without explanation.
 3. Run the risk-appropriate tests and link the exact CI run.
-4. Include migration/rollout/rollback notes for data changes.
+4. Include migration, rollout, compatibility, and rollback notes for data changes.
 5. Include screenshots or recordings for visible PWA changes.
-6. State residual manual validation gaps and follow-up issues.
-7. Request Copilot review and perform a human review before merge.
+6. State residual manual validation gaps and link deferred work.
+7. Identify the highest-risk behavior in the reviewer-focus field.
+8. Comment `@codex review` or confirm that automatic Codex review has run.
+9. Resolve or explicitly disposition material findings before human approval.
+
+## Local review with Codex
+
+Codex CLI or the Codex app can also review local or branch changes before a pull request is opened. Run in a review/suggest mode and ask it to compare the branch with `master` using the same `AGENTS.md` contract. This is useful for early feedback but does not replace the GitHub review attached to the final PR head.
 
 ## Limitations
 
 - AI review is non-deterministic and can miss defects or raise false positives.
-- The custom agent does not grant itself repository permissions and cannot become an automatic reviewer merely by existing in the branch.
-- Automatic review requires Copilot availability and the one-time repository ruleset configuration.
-- The agent is configured with read/search tools and should not modify implementation code during review.
-- Green CI and a clean AI review do not replace explicit human approval for HouseKeeper changes.
+- Codex requires repository authorization and an enabled Codex environment/review configuration.
+- Automatic review is a Codex account/workspace setting; repository files only define the review policy.
+- Network, secret, and environment access for Codex tasks must remain intentionally configured and least-privileged.
+- Green CI and a clean Codex review do not replace explicit human approval.
 
-## Primary GitHub documentation
+## Primary OpenAI documentation
 
-- [Creating custom agents for Copilot cloud agent](https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/customize-cloud-agent/create-custom-agents)
-- [Adding repository custom instructions](https://docs.github.com/en/copilot/how-tos/copilot-on-github/customize-copilot/add-custom-instructions/add-repository-instructions)
-- [Using GitHub Copilot code review](https://docs.github.com/en/copilot/how-tos/copilot-on-github/use-copilot-agents/copilot-code-review)
-- [Configuring automatic Copilot review](https://docs.github.com/en/copilot/how-tos/copilot-on-github/set-up-copilot/configure-automatic-review)
+- [Introducing upgrades to Codex](https://openai.com/index/introducing-upgrades-to-codex/)
+- [Using Codex with your ChatGPT plan](https://help.openai.com/en/articles/11369540-using-codex-with-your-chatgpt-plan)
+- [Introducing Codex and the AGENTS.md instruction model](https://openai.com/index/introducing-codex/)
+- [Codex documentation](https://developers.openai.com/codex)

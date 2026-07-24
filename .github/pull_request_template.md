@@ -86,8 +86,15 @@ Paste exact commands and GitHub Actions run links here.
 
 <!-- State real residual risk. Link follow-up issues instead of hiding scope. -->
 
-## Reviewer request
+## Codex review request
 
-- [ ] Request GitHub Copilot code review.
-- [ ] For a dedicated deep review, run/select the `housekeeper-reviewer` custom agent.
-- Reviewer focus: <!-- Identify the highest-risk behavior in this PR. -->
+- [ ] Commented `@codex review`, or confirmed automatic Codex review ran against the current PR head.
+- [ ] Re-requested Codex review after material corrections where automatic review of new pushes is not enabled.
+- Reviewer focus: <!-- Identify the highest-risk behavior; e.g. household isolation, migration safety, idempotency, restart recovery, offline state, or deployment permissions. -->
+- Codex findings disposition: <!-- Link resolved threads or explain accepted residual risk. -->
+
+## Human approval
+
+- [ ] Material Codex findings are resolved or explicitly dispositioned.
+- [ ] CI is green for the final PR head.
+- [ ] A human reviewer has deliberately approved the change.
