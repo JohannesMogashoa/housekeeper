@@ -1,6 +1,6 @@
 # Foundation Phase Backlog
 
-This backlog converts the Discovery 0 decisions into executable, testable slices. Task numbers are assigned by the Notion backlog; the sequence below is the intended execution order and dependency model.
+This backlog converts the Discovery 0 decisions into executable, testable slices. The canonical task IDs below are assigned by the HouseKeeper Notion backlog and define the intended execution order and dependency model.
 
 ## Planning rules
 
@@ -15,31 +15,31 @@ This backlog converts the Discovery 0 decisions into executable, testable slices
 
 ```text
 Wave 1 — close discovery validation
-  F-01 Physical-device PWA validation
+  HK-16 Physical-device PWA validation
 
 Wave 2 — production trust and delivery boundary
-  F-02 Entra External ID integration
-  F-03 Azure development environment and OIDC pipeline
+  HK-17 Entra External ID integration
+  HK-18 Azure development environment and OIDC pipeline
 
 Wave 3 — household and command foundations
-  F-04 Household invitations and membership roles
-  F-05 Idempotent command and offline replay protocol
+  HK-19 Household invitations and membership roles
+  HK-20 Idempotent command and offline replay protocol
 
 Wave 4 — durable application plumbing
-  F-06 Transactional outbox, inbox and worker foundation
-  F-07 Client offline pending-action queue
+  HK-21 Transactional outbox, inbox and worker foundation
+  HK-22 Client offline pending-action queue
 
 Wave 5 — first business and supporting modules
-  F-08 Tasks and Routines foundation slice
-  F-09 Attachment storage vertical slice
-  F-10 Notifications and Web Push vertical slice
+  HK-23 Tasks and Routines foundation slice
+  HK-24 Attachment storage vertical slice
+  HK-25 Notifications and Web Push vertical slice
 
 Wave 6 — operational readiness
-  F-11 Observability, backup and recovery baseline
-  F-12 Foundation release gate
+  HK-26 Observability, backup and recovery baseline
+  HK-27 Foundation release gate
 ```
 
-## F-01 — Validate the PWA on physical mobile devices
+## HK-16 — Validate the PWA on physical mobile devices
 
 **Priority:** P0  
 **Estimate:** S  
@@ -61,7 +61,7 @@ The approved PWA-first decision has recorded evidence on representative Android 
 - Compressed initial payload, first launch and repeat launch observations are recorded on a representative South African mobile connection.
 - Browser-specific limitations are added to the technical recommendation.
 
-## F-02 — Integrate Microsoft Entra External ID
+## HK-17 — Integrate Microsoft Entra External ID
 
 **Priority:** P0  
 **Estimate:** L  
@@ -82,7 +82,7 @@ A real external user can sign in through Entra External ID, the API validates th
 - Invalid issuer, invalid audience, expired token, missing subject and cross-household access tests pass.
 - No client secret, storage credential or privileged token enters the PWA.
 
-## F-03 — Provision the shared Azure development environment
+## HK-18 — Provision the shared Azure development environment
 
 **Priority:** P0  
 **Estimate:** L  
@@ -103,11 +103,11 @@ A reproducible shared development environment is provisioned in South Africa Nor
 - Readiness and authenticated smoke tests pass after deployment.
 - Resource names, tags, retention, budgets and teardown guidance are documented.
 
-## F-04 — Implement household invitations and membership roles
+## HK-19 — Implement household invitations and membership roles
 
 **Priority:** P0  
 **Estimate:** L  
-**Dependencies:** F-02
+**Dependencies:** HK-17
 
 ### Outcome
 
@@ -123,11 +123,11 @@ A household owner can invite another authenticated person, and the invited membe
 - Cross-household, expired, replayed, removed-member and last-owner safety tests pass.
 - Audit evidence records invitation and membership lifecycle changes without storing secrets.
 
-## F-05 — Define the idempotent command and offline replay protocol
+## HK-20 — Define the idempotent command and offline replay protocol
 
 **Priority:** P0  
 **Estimate:** M  
-**Dependencies:** F-02 and F-04
+**Dependencies:** HK-17 and HK-19
 
 ### Outcome
 
@@ -143,11 +143,11 @@ Mutation APIs have a consistent retry contract suitable for unreliable connectiv
 - API versioning and compatibility rules are documented.
 - Integration tests cover response loss followed by replay, concurrent duplicate requests and cross-member operation-key reuse.
 
-## F-06 — Implement transactional outbox, inbox and worker foundation
+## HK-21 — Implement transactional outbox, inbox and worker foundation
 
 **Priority:** P0  
 **Estimate:** L  
-**Dependencies:** F-05 and the PostgreSQL module-boundary decision
+**Dependencies:** HK-20 and the PostgreSQL module-boundary decision
 
 ### Outcome
 
@@ -164,11 +164,11 @@ A committed module change can produce a durable integration event, and another m
 - Tests prove crash-after-commit recovery, duplicate delivery, handler failure, expired lease and API restart.
 - The implementation can move to a separate host without changing module domain logic.
 
-## F-07 — Implement the client offline pending-action queue
+## HK-22 — Implement the client offline pending-action queue
 
 **Priority:** P0  
 **Estimate:** L  
-**Dependencies:** F-05
+**Dependencies:** HK-20
 
 ### Outcome
 
@@ -177,7 +177,7 @@ The PWA can retain an approved mutation offline and replay it safely after conne
 ### Acceptance criteria
 
 - Pending actions persist in IndexedDB or an equivalently durable browser store.
-- Each action uses the F-05 operation identifier and a versioned payload.
+- Each action uses the HK-20 operation identifier and a versioned payload.
 - Replay respects authentication state, household scope and ordering requirements.
 - The UI distinguishes pending, retrying, conflicted and terminal actions.
 - Backoff and manual retry behaviour are defined.
@@ -185,11 +185,11 @@ The PWA can retain an approved mutation offline and replay it safely after conne
 - Playwright tests cover offline creation, browser reload, reconnect, duplicate replay and conflict presentation.
 - Service-worker asset caching remains separate from business-data synchronization.
 
-## F-08 — Build the Tasks and Routines foundation slice
+## HK-23 — Build the Tasks and Routines foundation slice
 
 **Priority:** P0  
 **Estimate:** XL  
-**Dependencies:** F-04, F-05 and F-06
+**Dependencies:** HK-19, HK-20 and HK-21
 
 ### Outcome
 
@@ -204,13 +204,13 @@ A household member can define a simple recurring routine, materialize occurrence
 - Completion and postponement are idempotent and append history.
 - Schedule edits do not rewrite completed occurrence history.
 - Domain, PostgreSQL integration, architecture, API, bUnit and Playwright tests cover the slice.
-- Task events are published through F-06.
+- Task events are published through HK-21.
 
-## F-09 — Build the attachment storage vertical slice
+## HK-24 — Build the attachment storage vertical slice
 
 **Priority:** P1  
 **Estimate:** XL  
-**Dependencies:** F-03, F-04 and F-06
+**Dependencies:** HK-18, HK-19 and HK-21
 
 ### Outcome
 
@@ -227,11 +227,11 @@ An authorized household member can upload an approved image or PDF directly to A
 - Azurite supports the local path; focused Azure smoke tests prove SAS, CORS and event integration.
 - Cross-household upload, download and linking attempts are denied and tested.
 
-## F-10 — Build Notifications and Web Push vertical slice
+## HK-25 — Build Notifications and Web Push vertical slice
 
 **Priority:** P1  
 **Estimate:** XL  
-**Dependencies:** F-03, F-06 and F-08
+**Dependencies:** HK-18, HK-21 and HK-23
 
 ### Outcome
 
@@ -248,11 +248,11 @@ A due task occurrence creates an in-app reminder and, when the member opted in, 
 - Push secrets and endpoints are never logged.
 - Tests cover task completion before send, reassignment, duplicate events, expired lease, provider timeout, invalid subscription and API restart.
 
-## F-11 — Establish observability, backup and recovery baseline
+## HK-26 — Establish observability, backup and recovery baseline
 
 **Priority:** P0  
 **Estimate:** L  
-**Dependencies:** F-03 and F-06
+**Dependencies:** HK-18 and HK-21
 
 ### Outcome
 
@@ -269,11 +269,11 @@ The shared environment exposes actionable telemetry and has tested deployment, r
 - Deployment rollback restores the prior application artifact without attempting unsafe down-migrations.
 - Runbooks cover deployment failure, migration failure, database restore and background-queue backlog.
 
-## F-12 — Execute the Foundation release gate
+## HK-27 — Execute the Foundation release gate
 
 **Priority:** P0  
 **Estimate:** M  
-**Dependencies:** F-01 through F-11, with P1 capabilities included only when required for the agreed Foundation exit
+**Dependencies:** HK-16 through HK-26, with P1 capabilities included only when required for the agreed Foundation exit
 
 ### Outcome
 
