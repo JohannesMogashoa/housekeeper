@@ -8,6 +8,7 @@ HouseKeeper is a mobile-first household management application. This repository 
 - [Architecture decision index](docs/architecture/adr/README.md) — accepted ADR catalogue and implementation status
 - [Foundation backlog](docs/foundation-backlog.md) — ordered execution plan following Discovery 0
 - [Local development guide](docs/development/local-development.md) — prerequisites, startup, migrations, tests and troubleshooting
+- [Pull-request review agent](docs/development/pr-review-agent.md) — reviewer policy, custom agent usage and automatic-review activation
 
 ## What the walking skeleton proves
 
