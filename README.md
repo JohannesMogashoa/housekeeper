@@ -2,6 +2,13 @@
 
 HouseKeeper is a mobile-first household management application. This repository currently contains the HK-14 architecture walking skeleton: an installable Blazor WebAssembly PWA, an ASP.NET Core API, and a PostgreSQL-backed Households module.
 
+## Project documentation
+
+- [Technical recommendation](docs/architecture/technical-recommendation.md) — final stack, architecture, dependency rules, risks and deferred decisions
+- [Architecture decision index](docs/architecture/adr/README.md) — accepted ADR catalogue and implementation status
+- [Foundation backlog](docs/foundation-backlog.md) — ordered execution plan following Discovery 0
+- [Local development guide](docs/development/local-development.md) — prerequisites, startup, migrations, tests and troubleshooting
+
 ## What the walking skeleton proves
 
 A development user can:
