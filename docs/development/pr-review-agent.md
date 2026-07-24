@@ -17,7 +17,10 @@ Codex reads `AGENTS.md` guidance from the repository. The root file defines univ
 | `AGENTS.md` | Root architecture, security, reliability, testing, and review-output contract |
 | `src/AGENTS.md` | .NET, module boundaries, domain/application behavior, EF Core, PostgreSQL, and worker rules |
 | `src/HouseKeeper.Web/AGENTS.md` | PWA trust boundary, offline storage, accessibility, service worker, installability, and browser tests |
+| `tests/HouseKeeper.Web.Tests/AGENTS.md` | PWA component-test isolation, offline states, accessibility, and recovery coverage |
+| `tests/HouseKeeper.EndToEndTests/AGENTS.md` | Published-PWA browser, service-worker, restart, mobile, and household-isolation coverage |
 | `deploy/AGENTS.md` | Azure identity, Bicep, environments, migrations, deployment, rollback, recovery, and cost rules |
+| `scripts/AGENTS.md` | Local/CI orchestration isolation, disposable infrastructure, health/readiness, smoke, and persistence checks |
 | `.github/AGENTS.md` | Workflow permissions, CI integrity, deployment safety, PR evidence, and Codex-review usage |
 | `.github/pull_request_template.md` | Author evidence contract for linked work, risks, migrations, tests, UX, operations, and reviewer focus |
 
@@ -69,12 +72,14 @@ Codex prioritizes:
 
 Every material finding should include:
 
-- severity: Blocker, High, Medium, or Low;
+- native priority: `[P0]`, `[P1]`, `[P2]`, or `[P3]`;
 - changed file and line/range;
 - violated invariant or issue requirement;
 - realistic failure mode;
 - smallest safe correction;
 - test or evidence needed to prove the correction.
+
+Priority meanings are defined in the root `AGENTS.md`: `[P0]` is stop-ship, `[P1]` urgent, `[P2]` material and normally pre-merge, and `[P3]` narrowly scoped and non-urgent.
 
 Questions and non-blocking suggestions remain separate from defects. Codex should avoid speculative abstractions, unrelated refactors, personal style preferences, vague suggestions, and praise-only noise.
 
