@@ -62,7 +62,7 @@ Use the smallest complete test portfolio for the changed risk:
 - bUnit for deterministic Razor component behavior;
 - Playwright against published artifacts for critical browser journeys;
 - failure-injection and restart tests for idempotency, outbox/inbox, workers, and provider failures;
-- Bicep validation, `what-if`, deployment smoke, rollback, and recovery evidence for infrastructure changes.
+- CDK strict synth, policy/security checks, reviewed diff, deployment smoke, rollback, and recovery evidence for infrastructure changes.
 
 A green pipeline is supporting evidence, not proof of correctness.
 

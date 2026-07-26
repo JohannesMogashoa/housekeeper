@@ -5,7 +5,7 @@ $composeFile = Join-Path $rootDirectory "deploy/local/compose.yaml"
 
 Push-Location $rootDirectory
 try {
-    docker compose -f $composeFile up -d postgres
+    docker compose -f $composeFile up -d postgres s3
 
     dotnet tool restore
     dotnet restore HouseKeeper.slnx
@@ -49,6 +49,7 @@ try {
     Write-Host "HouseKeeper is starting:"
     Write-Host "  Web: http://localhost:5136"
     Write-Host "  API: http://localhost:5287"
+    Write-Host "  S3: http://localhost:9000"
     Write-Host ""
 
     try {

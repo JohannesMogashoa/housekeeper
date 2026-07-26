@@ -1,0 +1,217 @@
+using Amazon.CDK;
+using Amazon.CDK.AWS.CloudFront;
+using Amazon.CDK.AWS.CloudFront.Origins;
+using Amazon.CDK.AWS.IAM;
+using Amazon.CDK.AWS.S3;
+
+using Constructs;
+
+using HouseKeeper.Infrastructure.Configuration;
+
+namespace HouseKeeper.Infrastructure.Stacks;
+
+public sealed class StorageStack : Stack
+{
+    public StorageStack(
+        Construct scope,
+        string id,
+        StackProps props,
+        PlatformConfiguration configuration)
+        : base(scope, id, props)
+    {
+        PwaBucket = CreatePrivateBucket(
+            "PwaBucket",
+            configuration,
+            "pwa",
+            versioned: true,
+            enableCors: false);
+
+        AttachmentBucket = CreatePrivateBucket(
+            "AttachmentBucket",
+            configuration,
+            "attachments",
+            versioned: true,
+            enableCors: true);
+
+        MalwareProtectionRole = new Role(
+            this,
+            "MalwareProtectionRole",
+            new RoleProps
+            {
+                AssumedBy = new ServicePrincipal("malware-protection-plan.guardduty.amazonaws.com"),
+                Description = "GuardDuty Malware Protection for S3 access to HouseKeeper attachment objects."
+            });
+
+        MalwareProtectionRole.AddToPolicy(
+            new PolicyStatement(
+                new PolicyStatementProps
+                {
+                    Effect = Effect.ALLOW,
+                    Actions =
+                    [
+                        "s3:GetBucketLocation",
+                        "s3:ListBucket",
+                        "s3:GetObject",
+                        "s3:GetObjectVersion",
+                        "s3:PutObject",
+                        "s3:PutObjectAcl"
+                    ],
+                    Resources =
+                    [
+                        AttachmentBucket.BucketArn,
+                        AttachmentBucket.ArnForObjects("*")
+                    ]
+                }));
+
+        MalwareProtectionPlan = new CfnResource(
+            this,
+            "MalwareProtectionPlan",
+            new CfnResourceProps
+            {
+                Type = "AWS::GuardDuty::MalwareProtectionPlan",
+                Properties = new Dictionary<string, object>
+                {
+                    ["Role"] = MalwareProtectionRole.RoleArn,
+                    ["ProtectedResource"] = new Dictionary<string, object>
+                    {
+                        ["S3Bucket"] = new Dictionary<string, object>
+                        {
+                            ["BucketName"] = AttachmentBucket.BucketName
+                        }
+                    },
+                    ["Actions"] = new Dictionary<string, object>
+                    {
+                        ["Tagging"] = new Dictionary<string, object>
+                        {
+                            ["Status"] = "ENABLED"
+                        }
+                    }
+                }
+            });
+
+        PwaDistribution = new Distribution(
+            this,
+            "PwaDistribution",
+            new DistributionProps
+            {
+                DefaultRootObject = "index.html",
+                DefaultBehavior = new BehaviorOptions
+                {
+                    Origin = S3BucketOrigin.WithOriginAccessControl(PwaBucket),
+                    ViewerProtocolPolicy = ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+                    AllowedMethods = AllowedMethods.ALLOW_GET_HEAD,
+                    CachePolicy = CachePolicy.CACHING_OPTIMIZED
+                },
+                ErrorResponses =
+                [
+                    new ErrorResponse
+                    {
+                        HttpStatus = 403,
+                        ResponseHttpStatus = 200,
+                        ResponsePagePath = "/index.html",
+                        Ttl = Duration.Minutes(1)
+                    },
+                    new ErrorResponse
+                    {
+                        HttpStatus = 404,
+                        ResponseHttpStatus = 200,
+                        ResponsePagePath = "/index.html",
+                        Ttl = Duration.Minutes(1)
+                    }
+                ],
+                EnableLogging = false,
+                Comment = "HouseKeeper private PWA distribution."
+            });
+
+        _ = new CfnOutput(
+            this,
+            "PwaDistributionDomain",
+            new CfnOutputProps { Value = PwaDistribution.DistributionDomainName });
+        _ = new CfnOutput(
+            this,
+            "AttachmentBucketName",
+            new CfnOutputProps { Value = AttachmentBucket.BucketName });
+
+        Amazon.CDK.Tags.Of(this).Add("Application", "HouseKeeper");
+        Amazon.CDK.Tags.Of(this).Add("Environment", configuration.EnvironmentName);
+        Amazon.CDK.Tags.Of(this).Add("ManagedBy", "AWS-CDK");
+        Amazon.CDK.Tags.Of(this).Add("DataClassification", "Household-private");
+    }
+
+    public Bucket PwaBucket { get; }
+
+    public Bucket AttachmentBucket { get; }
+
+    public Role MalwareProtectionRole { get; }
+
+    public CfnResource MalwareProtectionPlan { get; }
+
+    public Distribution PwaDistribution { get; }
+
+    private Bucket CreatePrivateBucket(
+        string id,
+        PlatformConfiguration configuration,
+        string purpose,
+        bool versioned,
+        bool enableCors)
+    {
+        Bucket bucket = new(
+            this,
+            id,
+            new BucketProps
+            {
+                BucketKeyEnabled = true,
+                BlockPublicAccess = BlockPublicAccess.BLOCK_ALL,
+                Encryption = BucketEncryption.S3_MANAGED,
+                ObjectOwnership = ObjectOwnership.BUCKET_OWNER_ENFORCED,
+                Versioned = versioned,
+                AutoDeleteObjects = !configuration.IsProduction,
+                RemovalPolicy = configuration.IsProduction
+                    ? RemovalPolicy.RETAIN
+                    : RemovalPolicy.DESTROY,
+                LifecycleRules =
+                [
+                    new LifecycleRule
+                    {
+                        Id = $"ExpireIncomplete{purpose}Uploads",
+                        AbortIncompleteMultipartUploadAfter = Duration.Days(1)
+                    }
+                ],
+                Cors = enableCors
+                    ?
+                    [
+                        new CorsRule
+                        {
+                            AllowedMethods = [HttpMethods.PUT, HttpMethods.GET, HttpMethods.HEAD],
+                            AllowedOrigins = configuration.CallbackUrls
+                                .Select(static url => new Uri(url).GetLeftPart(UriPartial.Authority))
+                                .Distinct(StringComparer.OrdinalIgnoreCase)
+                                .ToArray(),
+                            AllowedHeaders = ["*"],
+                            ExposedHeaders = ["ETag"],
+                            MaxAge = 300
+                        }
+                    ]
+                    : null
+            });
+
+        bucket.AddToResourcePolicy(
+            new PolicyStatement(
+                new PolicyStatementProps
+                {
+                    Effect = Effect.DENY,
+                    Principals = [new AnyPrincipal()],
+                    Actions = ["s3:*"],
+                    Resources = [bucket.BucketArn, bucket.ArnForObjects("*")],
+                    Conditions = new Dictionary<string, object>
+                    {
+                        ["Bool"] = new Dictionary<string, object>
+                        {
+                            ["aws:SecureTransport"] = "false"
+                        }
+                    }
+                }));
+
+        return bucket;
+    }
+}

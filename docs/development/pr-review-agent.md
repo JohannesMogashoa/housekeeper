@@ -19,7 +19,7 @@ Codex reads `AGENTS.md` guidance from the repository. The root file defines univ
 | `src/HouseKeeper.Web/AGENTS.md` | PWA trust boundary, offline storage, accessibility, service worker, installability, and browser tests |
 | `tests/HouseKeeper.Web.Tests/AGENTS.md` | PWA component-test isolation, offline states, accessibility, and recovery coverage |
 | `tests/HouseKeeper.EndToEndTests/AGENTS.md` | Published-PWA browser, service-worker, restart, mobile, and household-isolation coverage |
-| `deploy/AGENTS.md` | Azure identity, Bicep, environments, migrations, deployment, rollback, recovery, and cost rules |
+| `deploy/AGENTS.md` | AWS identity, CDK, environments, migrations, deployment, rollback, recovery, and cost rules |
 | `scripts/AGENTS.md` | Local/CI orchestration isolation, disposable infrastructure, health/readiness, smoke, and persistence checks |
 | `.github/AGENTS.md` | Workflow permissions, CI integrity, deployment safety, PR evidence, and Codex-review usage |
 | `.github/pull_request_template.md` | Author evidence contract for linked work, risks, migrations, tests, UX, operations, and reviewer focus |

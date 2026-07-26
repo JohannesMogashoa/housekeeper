@@ -1,6 +1,6 @@
 # HouseKeeper
 
-HouseKeeper is a mobile-first household management application. This repository currently contains the HK-14 architecture walking skeleton: an installable Blazor WebAssembly PWA, an ASP.NET Core API, and a PostgreSQL-backed Households module.
+HouseKeeper is a mobile-first household management application. This repository currently contains the HK-14 architecture walking skeleton and the HK-28 AWS platform foundation: an installable Blazor WebAssembly PWA, an ASP.NET Core API, PostgreSQL-backed modules, and reviewable AWS CDK/container definitions.
 
 ## Project documentation
 
@@ -9,6 +9,7 @@ HouseKeeper is a mobile-first household management application. This repository 
 - [Foundation backlog](docs/foundation-backlog.md) — ordered execution plan following Discovery 0
 - [Local development guide](docs/development/local-development.md) — prerequisites, startup, migrations, tests and troubleshooting
 - [Codex pull-request review](docs/development/pr-review-agent.md) — repository instructions, on-demand review and automatic-review activation
+- [AWS deployment foundation](deploy/aws/README.md) — CDK configuration, synth, security checks, container build and protected deployment boundaries
 
 ## What the walking skeleton proves
 
@@ -28,6 +29,7 @@ The development identity is intentionally not production authentication. It is e
 - .NET SDK `10.0.300` or a compatible feature-band roll-forward
 - Docker with Docker Compose
 - Bash on macOS/Linux, or PowerShell 7 on Windows
+- Node.js 18+ for the AWS CDK CLI when synthesizing infrastructure
 
 The .NET SDK, NuGet packages, and `dotnet-ef` tool are pinned by repository manifests. NuGet vulnerability auditing remains enforced during restore.
 
@@ -167,7 +169,7 @@ The pull-request workflow:
 
 1. restores pinned tools and the vulnerability-audited NuGet graph;
 2. builds the complete solution with nullable analysis, recommended analyzers, and warnings as errors;
-3. runs domain, bUnit, and architecture tests through Microsoft Testing Platform v2;
+3. runs domain, bUnit, architecture, and CDK infrastructure tests through Microsoft Testing Platform v2;
 4. collects and retains Cobertura coverage;
 5. publishes the API and PWA and rejects unresolved static-asset fingerprints;
 6. applies migrations to a clean PostgreSQL 18.4 service;
@@ -175,6 +177,13 @@ The pull-request workflow:
 8. runs the authenticated API smoke journey;
 9. installs pinned Playwright Chromium and executes the real browser journey;
 10. restarts the published API and verifies the original household remains available;
-11. uploads restore, build, test, migration, API, web, browser, and coverage artifacts.
+11. synthesizes the AWS CDK application with strict validation and builds the non-root API image;
+12. uploads restore, build, test, migration, API, web, browser, infrastructure, and coverage artifacts.
 
 The workflow does not deploy production infrastructure.
+
+## AWS platform foundation
+
+The approved cloud platform is AWS in `af-south-1` (Africa/Cape Town). The PWA is hosted from private S3 behind CloudFront Origin Access Control; the API runs as a non-root ASP.NET Core container on ECS Fargate behind an ALB; PostgreSQL uses RDS; authentication uses Cognito User Pools; and delivery uses C# AWS CDK plus GitHub Actions OIDC.
+
+The CDK project is intentionally deployment-safe by default. It requires explicit environment configuration for shared or production resources, protects stateful resources, keeps migration privileges separate from runtime privileges, and never places AWS credentials or privileged secrets in the PWA.

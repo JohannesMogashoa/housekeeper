@@ -6,7 +6,7 @@ compose_file="${root_dir}/deploy/local/compose.yaml"
 
 cd "${root_dir}"
 
-docker compose -f "${compose_file}" up -d postgres
+docker compose -f "${compose_file}" up -d postgres s3
 
 dotnet tool restore
 dotnet restore HouseKeeper.slnx
@@ -38,5 +38,6 @@ trap cleanup EXIT INT TERM
 printf '\nHouseKeeper is starting:\n'
 printf '  Web: http://localhost:5136\n'
 printf '  API: http://localhost:5287\n\n'
+printf '  S3: http://localhost:9000\n\n'
 
 wait "${api_pid}" "${web_pid}"

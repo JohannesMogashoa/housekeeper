@@ -1,13 +1,13 @@
 # HouseKeeper Technical Recommendation
 
-**Status:** Foundation baseline  
-**Decision date:** 24 July 2026  
-**Scope:** Discovery 0 and the transition into Foundation  
+**Status:** Foundation baseline
+**Decision date:** 26 July 2026
+**Scope:** Discovery 0 and the transition into Foundation
 **Implementation evidence:** HK-14 walking skeleton, merged through PR #2
 
 ## Executive decision
 
-HouseKeeper will be delivered as an Azure-first .NET 10 modular monolith with an independently deployable mobile-first Blazor WebAssembly PWA, an ASP.NET Core API, PostgreSQL persistence, and module-owned data boundaries.
+HouseKeeper will be delivered as an AWS-first .NET 10 modular monolith with an independently deployable mobile-first Blazor WebAssembly PWA, an ASP.NET Core API, PostgreSQL persistence, and module-owned data boundaries.
 
 The recommendation intentionally optimises for one developer, a small initial user base, South African hosting locality, rapid product learning, and a credible growth path without adopting distributed-system complexity before it is justified.
 
@@ -21,19 +21,19 @@ The approved baseline is:
 | Server | ASP.NET Core Minimal API composition host |
 | Architecture | Modular monolith; one backend deployable and one module assembly per meaningful capability |
 | Persistence | PostgreSQL with EF Core/Npgsql; one physical database and module-owned schemas/contexts/migrations |
-| Authentication | Microsoft Entra External ID for production; development-only local identity for the inner loop |
+| Authentication | Amazon Cognito User Pools with authorization-code flow and PKCE; development-only local identity for the inner loop |
 | Authorization | Application-owned household memberships and roles; default-deny resource checks in the API |
 | Async work | PostgreSQL-backed durable work records and in-process `BackgroundService` dispatch for the initial topology |
 | Notifications | In-app notifications plus opt-in Web Push through a provider-neutral adapter |
-| Attachments | Azure Blob Storage, exact-object short-lived user-delegation SAS, private containers, malware scanning |
+| Attachments | Private Amazon S3, exact-object short-lived SigV4 presigned grants, GuardDuty Malware Protection for S3 |
 | Testing | xUnit v3 on Microsoft Testing Platform v2, bUnit, Playwright, ArchUnitNET, PostgreSQL integration tests, Cobertura |
 | Local orchestration | Repository scripts plus Docker Compose; .NET Aspire deferred |
-| Frontend hosting | Azure Static Web Apps |
-| API hosting | Azure App Service for Linux using framework-dependent code deployment |
-| Database hosting | Azure Database for PostgreSQL Flexible Server |
-| Region | South Africa North for regional application resources |
-| Delivery | GitHub Actions, Bicep, explicit migration artifacts, protected production promotion |
-| Observability | Structured logs, health endpoints and OpenTelemetry-compatible telemetry exported to Azure Monitor/Application Insights |
+| Frontend hosting | Private Amazon S3 origin behind Amazon CloudFront Origin Access Control |
+| API hosting | Hardened non-root ASP.NET Core container on Amazon ECS Fargate behind an Application Load Balancer |
+| Database hosting | Amazon RDS for PostgreSQL |
+| Region | `af-south-1` (Africa/Cape Town) |
+| Delivery | GitHub Actions OIDC to narrow IAM deployment roles, AWS CDK in C#, explicit migration tasks, protected promotion |
+| Observability | CloudWatch Logs, Metrics and Alarms with OpenTelemetry-compatible tracing and X-Ray |
 
 ## Architectural principles
 
@@ -66,7 +66,7 @@ flowchart LR
     N --> PG
     A --> PG
 
-    A --> Blob[(Azure Blob Storage)]
+    A --> S3[(Amazon S3 attachments)]
     N --> Push[Web Push service]
 
     T -. integration events .-> N
@@ -87,26 +87,26 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    GH[GitHub Actions] --> SWA[Azure Static Web Apps\nHouseKeeper.Web]
-    GH --> APP[Azure App Service Linux\nHouseKeeper.Api]
+    GH[GitHub Actions OIDC] --> CF[CloudFront\nS3 PWA origin]
+    GH --> APP[ECS Fargate\nALB and API service]
     GH --> MIG[Protected migration job]
-    GH --> BICEP[Bicep infrastructure deployment]
+    GH --> CDK[AWS CDK\nC# stacks]
 
-    APP --> PG[(Azure PostgreSQL\nFlexible Server)]
-    APP --> KV[Azure Key Vault]
-    APP --> BLOB[Azure Blob Storage]
-    APP --> MON[Azure Monitor / Application Insights]
+    APP --> PG[(Amazon RDS\nPostgreSQL)]
+    APP --> SM[Secrets Manager\nParameter Store]
+    APP --> BLOB[Private S3\nattachments]
+    APP --> MON[CloudWatch\nX-Ray]
     MIG --> PG
-    SWA --> APP
+    CF --> APP
 ```
 
 Production deployment rules:
 
 - Build frontend and API artifacts once and promote the same immutable artifacts.
-- Authenticate GitHub Actions to Azure using OpenID Connect federation.
-- Use managed identity from App Service to Azure resources wherever supported.
+- Authenticate GitHub Actions to AWS using OpenID Connect federation and narrow IAM deployment roles.
+- Use ECS task roles and service-linked roles for AWS access; do not put AWS credentials in the container or PWA.
 - Use a separate migration identity with narrower and temporary deployment access.
-- Run Bicep validation and `what-if` before environment changes.
+- Run `cdk synth --strict`, policy/security checks and reviewed `cdk diff` before environment changes.
 - Apply reviewed migration scripts before deploying code that requires the schema.
 - Run readiness and end-to-end smoke checks after deployment.
 - Retain previous application artifacts and migration manifests for rollback analysis.
@@ -178,7 +178,7 @@ Module A
 - `HouseKeeper.Contracts` contains serialization-safe boundary records, not entities, repositories, `IQueryable`, or framework implementations.
 - The API is a composition and transport host; domain rules do not live in endpoints or middleware.
 - Module implementation assemblies do not reference one another.
-- Domain namespaces do not reference ASP.NET Core, EF Core, Azure SDKs, browser APIs, or endpoint types.
+- Domain namespaces do not reference ASP.NET Core, EF Core, AWS SDKs, browser APIs, or endpoint types.
 - Architecture tests protect these constraints on every pull request.
 
 ## Data and migration strategy
@@ -205,7 +205,7 @@ costs          # later
 
 ## Identity and authorization boundary
 
-Production authentication will use Microsoft Entra External ID. The external identity provider proves who the subject is; HouseKeeper decides what that subject may do.
+Production authentication will use Amazon Cognito User Pools. The external identity provider proves who the subject is; HouseKeeper decides what that subject may do.
 
 The server maps the external subject identifier to an application member and evaluates household membership and role records stored in the Households schema. Identity-provider roles are not used as the source of household authorization.
 
@@ -233,14 +233,14 @@ Temporal decisions:
 
 ## Attachment security model
 
-- Binary content lives in private Azure Blob Storage, not PostgreSQL or the API filesystem.
+- Binary content lives in private Amazon S3, not PostgreSQL or the API filesystem.
 - PostgreSQL stores metadata, lifecycle, scan state, quota reservations, claims, and deletion state.
-- The API grants an exact-object, short-lived upload operation after household authorization and quota checks.
+- The API grants an exact-object, short-lived SigV4 presigned upload operation after household authorization and quota checks.
 - The browser uploads directly to storage and cannot list the container.
 - Only attachments that pass size, signature, format, ownership, and malware checks become `Ready`.
 - Business modules store opaque `AttachmentId` references and own the semantic link.
 - Original filenames never form part of the object key.
-- Local development uses Azurite and deterministic scanner substitutes; real Azure integration receives a focused smoke suite.
+- Local development uses a pinned S3-compatible emulator and deterministic scanner substitutes; real AWS integration receives focused smoke suites.
 
 ## Quality gates
 
@@ -268,14 +268,14 @@ Coverage is an observability signal, not an acceptance target by itself. Critica
 | Risk | Current control | Foundation response |
 |---|---|---|
 | Physical mobile PWA behaviour is not yet evidenced | Browser and Chromium journey pass | Run Android and iOS installation/offline/upload validation and record payload metrics |
-| Production identity is not implemented | Development auth proves the middleware boundary | Integrate Entra External ID and retain application-owned membership checks |
+| Production identity is not implemented | Development auth proves the middleware boundary | Integrate Cognito User Pools and retain application-owned membership checks |
 | Offline business-data sync is not implemented | Online walking skeleton only | Define IndexedDB store, idempotency keys, replay rules, and conflict policy |
 | In-process workers share the API lifecycle | PostgreSQL is the durable source of work | Add leasing, retry, inbox/outbox and queue-age telemetry before critical reminders |
 | One backend replica is an operational coupling | Initial topology is intentionally simple | Keep one active instance; extract worker or add coordination only on measured need |
 | Blazor WebAssembly payload may be slow on mobile networks | Published PWA is validated | Capture compressed payload and first-use measurements on representative South African connections |
 | Attachment scanning adds cost and asynchronous failure modes | Private storage and lifecycle design accepted | Implement quotas, scanner result inbox, cleanup and budget alerts |
-| Basic App Service lacks deployment slots | Smoke tests and rollback artifacts planned | Use expand-and-contract migrations; upgrade to Standard before public release if interruption is unacceptable |
-| Burstable PostgreSQL can exhaust CPU credits | Conservative initial sizing | Load-test API plus worker traffic and monitor CPU, connections, locks and query latency |
+| ECS deployment and Fargate capacity add operational coupling | Circuit breaker, health checks and immutable images | Keep desired count and scaling conservative; add capacity only from measured load |
+| Burstable RDS PostgreSQL can exhaust CPU credits | Conservative initial sizing | Load-test API plus worker traffic and monitor CPU, connections, locks and query latency |
 | Backups can exist without being recoverable | Managed backups selected | Automate restore drills and record recovery observations |
 | Architecture documentation can drift | Architecture tests protect code references | Treat ADR and recommendation changes as required pull-request work when boundaries change |
 
@@ -304,11 +304,11 @@ Remain outside MVP until household task, maintenance, and shopping workflows pro
 Foundation is complete when:
 
 - production authentication and household authorization are exercised end to end;
-- a shared development Azure environment is reproducibly provisioned;
-- migrations, secrets, managed identities, telemetry and release promotion are proven;
+- a shared development AWS environment is reproducibly provisioned in `af-south-1`;
+- migrations, Secrets Manager/Parameter Store, IAM roles, telemetry and release promotion are proven;
 - offline pending actions have an explicit idempotent replay contract;
 - durable integration-event delivery is available for critical cross-module reactions;
-- attachment upload and scan lifecycle is proven against Azure;
+- attachment upload and scan lifecycle is proven against S3 and GuardDuty Malware Protection for S3;
 - physical-device PWA validation is recorded;
 - the first non-Households business module follows and passes the dependency rules;
 - operational runbooks cover deployment, rollback, database restore and incident triage.

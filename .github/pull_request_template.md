@@ -61,7 +61,7 @@ Screenshots/recordings: <!-- Required for visible UI changes; include mobile vie
 - [ ] bUnit component tests
 - [ ] Playwright published browser journey
 - [ ] Failure-injection/restart/retry tests
-- [ ] Bicep build/lint/what-if and deployment smoke tests
+- [ ] CDK build/strict synth/policy checks/reviewed diff and deployment smoke tests
 - [ ] Coverage/diagnostic artifacts reviewed
 
 Commands or workflow runs:
@@ -79,7 +79,7 @@ Paste exact commands and GitHub Actions run links here.
 - Telemetry/metrics/logs:
 - Alerts/runbooks:
 - Backup/restore/retention:
-- Azure cost/resource impact:
+- AWS cost/resource impact:
 - Deployment and rollback evidence:
 
 ## Known risks and deferred work

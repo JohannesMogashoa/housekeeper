@@ -68,6 +68,24 @@ jobs:
             --no-restore \
             2>&1 | tee artifacts/build.log
 
+      - name: Install Node.js for AWS CDK
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install AWS CDK Toolkit
+        run: npm install --global aws-cdk@2.1132.1
+
+      - name: Synthesize AWS infrastructure with strict validation
+        shell: bash
+        run: |
+          set -o pipefail
+          cd deploy/aws
+          cdk synth --strict 2>&1 | tee ../../artifacts/cdk-synth.log
+
+      - name: Build non-root API container
+        run: docker build --file deploy/containers/HouseKeeper.Api.Dockerfile --tag housekeeper-api:ci .
+
       - name: Run fast tests and collect coverage
         shell: bash
         run: |
@@ -94,6 +112,12 @@ jobs:
             --no-build \
             --results-directory artifacts/test-results \
             2>&1 | tee artifacts/architecture-tests.log
+
+          dotnet test deploy/aws/tests/HouseKeeper.Infrastructure.Tests/HouseKeeper.Infrastructure.Tests.csproj \
+            --configuration Release \
+            --no-build \
+            --results-directory artifacts/test-results \
+            2>&1 | tee artifacts/infrastructure-tests.log
 
           test -s artifacts/test-results/households.cobertura.xml
 
