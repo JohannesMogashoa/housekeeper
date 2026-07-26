@@ -11,8 +11,35 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
+
+if (string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("HouseKeeper")))
+{
+    string host = RequiredConfiguration("HOUSEKEEPER_DB_HOST");
+    string port = RequiredConfiguration("HOUSEKEEPER_DB_PORT");
+    string database = RequiredConfiguration("HOUSEKEEPER_DB_NAME");
+    string username = RequiredConfiguration("HOUSEKEEPER_DB_USERNAME");
+    string password = RequiredConfiguration("HOUSEKEEPER_DB_PASSWORD");
+
+    if (!int.TryParse(port, out int databasePort))
+    {
+        throw new InvalidOperationException("HOUSEKEEPER_DB_PORT must be a valid integer.");
+    }
+
+    NpgsqlConnectionStringBuilder connectionString = new()
+    {
+        Host = host,
+        Port = databasePort,
+        Database = database,
+        Username = username,
+        Password = password,
+        SslMode = SslMode.Require
+    };
+    builder.Configuration.AddInMemoryCollection(
+        [new KeyValuePair<string, string?>("ConnectionStrings:HouseKeeper", connectionString.ConnectionString)]);
+}
 
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
@@ -120,6 +147,14 @@ builder.Services.AddHouseholdsModule(builder.Configuration);
 
 var app = builder.Build();
 
+if (args.Contains("--migrate", StringComparer.Ordinal))
+{
+    await using AsyncServiceScope scope = app.Services.CreateAsyncScope();
+    HouseholdsDbContext dbContext = scope.ServiceProvider.GetRequiredService<HouseholdsDbContext>();
+    await dbContext.Database.MigrateAsync();
+    return;
+}
+
 app.UseExceptionHandler();
 app.UseCors("HouseKeeperWeb");
 
@@ -176,5 +211,10 @@ app.MapGet("/api/me", (ClaimsPrincipal principal) =>
 app.MapHouseholdsModule();
 
 app.Run();
+
+static string RequiredConfiguration(string key) =>
+    Environment.GetEnvironmentVariable(key)?.Trim() is { Length: > 0 } value
+        ? value
+        : throw new InvalidOperationException($"{key} is required for an AWS task.");
 
 public partial class Program;

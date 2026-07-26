@@ -2,6 +2,7 @@
   "app": "dotnet run --project HouseKeeper.Infrastructure.csproj --configuration Release --no-restore",
   "context": {
     "aws-cdk:enable-path-metadata": false,
-    "aws-cdk:enable-version-reporting": false
+    "aws-cdk:enable-version-reporting": false,
+    "@aws-cdk/core:defaultCrossStackReferences": "strong"
   }
 }

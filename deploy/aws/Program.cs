@@ -1,10 +1,12 @@
 using Amazon.CDK;
+using Cdklabs.CdkNag;
 
 using HouseKeeper.Infrastructure.Configuration;
 using HouseKeeper.Infrastructure.Stacks;
 
 PlatformConfiguration configuration = PlatformConfiguration.Load();
 App app = new();
+Aspects.Of(app).Add(new AwsSolutionsChecks());
 
 Amazon.CDK.Environment? environment = configuration.Account is null
     ? new Amazon.CDK.Environment { Region = configuration.Region }
@@ -27,7 +29,13 @@ ApplicationStack application = new(
     data,
     storage,
     identity);
-DeliveryStack delivery = new(app, "HouseKeeperDelivery", new StackProps { Env = environment }, configuration);
+DeliveryStack delivery = new(
+    app,
+    "HouseKeeperDelivery",
+    new StackProps { Env = environment },
+    configuration,
+    application,
+    storage);
 ObservabilityStack observability = new(
     app,
     "HouseKeeperObservability",

@@ -6,6 +6,8 @@ using Amazon.CDK.AWS.ECS;
 using Amazon.CDK.AWS.ECS.Patterns;
 using Amazon.CDK.AWS.ElasticLoadBalancingV2;
 using Amazon.CDK.AWS.IAM;
+using Amazon.CDK.AWS.Logs;
+using Cdklabs.CdkNag;
 
 using Constructs;
 
@@ -35,6 +37,16 @@ public sealed class ApplicationStack : Stack
             {
                 Vpc = network.Vpc,
                 Description = "HouseKeeper API tasks accept traffic only from the load balancer.",
+                AllowAllOutbound = true
+            });
+
+        MigrationSecurityGroup = new SecurityGroup(
+            this,
+            "MigrationSecurityGroup",
+            new SecurityGroupProps
+            {
+                Vpc = network.Vpc,
+                Description = "HouseKeeper migration tasks access PostgreSQL through a separate security group.",
                 AllowAllOutbound = true
             });
 
@@ -83,8 +95,19 @@ public sealed class ApplicationStack : Stack
                 AssumedBy = new ServicePrincipal("ecs-tasks.amazonaws.com"),
                 Description = "HouseKeeper ECS image, log and launch-time secret retrieval permissions."
             });
-        ExecutionRole.AddManagedPolicy(
-            ManagedPolicy.FromAwsManagedPolicyName("service-role/AmazonECSTaskExecutionRolePolicy"));
+        MigrationRole = new Role(
+            this,
+            "MigrationTaskRole",
+            new RoleProps
+            {
+                AssumedBy = new ServicePrincipal("ecs-tasks.amazonaws.com"),
+                Description = "HouseKeeper migration permissions; separate from the API runtime role."
+            });
+
+        ApiLogGroup = CreateLogGroup("ApiLogGroup", "api", configuration);
+        MigrationLogGroup = CreateLogGroup("MigrationLogGroup", "migration", configuration);
+        ApiRepository.GrantPull(ExecutionRole);
+        ApiLogGroup.GrantWrite(ExecutionRole);
 
         Dictionary<string, string> taskEnvironment = new()
         {
@@ -103,6 +126,10 @@ public sealed class ApplicationStack : Stack
             taskEnvironment[$"Cors__AllowedOrigins__{index}"] = pwaOrigins[index];
         }
 
+        ContainerImage apiImage = configuration.ApiImageUri is null
+            ? ContainerImage.FromEcrRepository(ApiRepository, "bootstrap")
+            : ContainerImage.FromRegistry(configuration.ApiImageUri);
+
         ApiService = new ApplicationLoadBalancedFargateService(
             this,
             "ApiService",
@@ -111,7 +138,7 @@ public sealed class ApplicationStack : Stack
                 Cluster = Cluster,
                 Cpu = 512,
                 MemoryLimitMiB = 1024,
-                DesiredCount = 1,
+                DesiredCount = Math.Max(configuration.ApiDesiredCount, 1),
                 PublicLoadBalancer = true,
                 AssignPublicIp = false,
                 SecurityGroups = [ApiSecurityGroup],
@@ -121,7 +148,7 @@ public sealed class ApplicationStack : Stack
                 },
                 TaskImageOptions = new ApplicationLoadBalancedTaskImageOptions
                 {
-                    Image = ContainerImage.FromEcrRepository(ApiRepository, "bootstrap"),
+                    Image = apiImage,
                     ContainerName = "housekeeper-api",
                     ContainerPort = 8080,
                     EnableLogging = true,
@@ -130,8 +157,18 @@ public sealed class ApplicationStack : Stack
                     Environment = taskEnvironment,
                     Secrets = new Dictionary<string, EcsSecret>
                     {
-                        ["ConnectionStrings__HouseKeeper"] = EcsSecret.FromSecretsManager(data.DatabaseSecret)
-                    }
+                        ["HOUSEKEEPER_DB_HOST"] = EcsSecret.FromSecretsManager(data.DatabaseSecret, "host"),
+                        ["HOUSEKEEPER_DB_PORT"] = EcsSecret.FromSecretsManager(data.DatabaseSecret, "port"),
+                        ["HOUSEKEEPER_DB_NAME"] = EcsSecret.FromSecretsManager(data.DatabaseSecret, "dbname"),
+                        ["HOUSEKEEPER_DB_USERNAME"] = EcsSecret.FromSecretsManager(data.DatabaseSecret, "username"),
+                        ["HOUSEKEEPER_DB_PASSWORD"] = EcsSecret.FromSecretsManager(data.DatabaseSecret, "password")
+                    },
+                    LogDriver = LogDrivers.AwsLogs(
+                        new AwsLogDriverProps
+                        {
+                            LogGroup = ApiLogGroup,
+                            StreamPrefix = "api"
+                        })
                 },
                 Protocol = configuration.ApiCertificateArn is null
                     ? ApplicationProtocol.HTTP
@@ -149,6 +186,50 @@ public sealed class ApplicationStack : Stack
                 EnableExecuteCommand = true
             });
 
+        if ((configuration.ApiImageUri is null || configuration.ApiDesiredCount == 0) &&
+            ApiService.Service.Node.DefaultChild is CfnService serviceResource)
+        {
+            // ECS accepts zero desired tasks, while the pattern constructor requires
+            // a positive value. This makes the first infrastructure deployment safe
+            // before the immutable API image has been pushed to ECR.
+            serviceResource.AddPropertyOverride("DesiredCount", 0);
+        }
+
+        MigrationTaskDefinition = new FargateTaskDefinition(
+            this,
+            "MigrationTaskDefinition",
+            new FargateTaskDefinitionProps
+            {
+                Cpu = 512,
+                MemoryLimitMiB = 1024,
+                ExecutionRole = ExecutionRole,
+                TaskRole = MigrationRole
+            });
+
+        _ = MigrationTaskDefinition.AddContainer(
+            "MigrationContainer",
+            new ContainerDefinitionOptions
+            {
+                Image = apiImage,
+                ContainerName = "housekeeper-migration",
+                Command = ["--migrate"],
+                Environment = taskEnvironment,
+                Secrets = new Dictionary<string, EcsSecret>
+                {
+                    ["HOUSEKEEPER_DB_HOST"] = EcsSecret.FromSecretsManager(data.DatabaseSecret, "host"),
+                    ["HOUSEKEEPER_DB_PORT"] = EcsSecret.FromSecretsManager(data.DatabaseSecret, "port"),
+                    ["HOUSEKEEPER_DB_NAME"] = EcsSecret.FromSecretsManager(data.DatabaseSecret, "dbname"),
+                    ["HOUSEKEEPER_DB_USERNAME"] = EcsSecret.FromSecretsManager(data.DatabaseSecret, "username"),
+                    ["HOUSEKEEPER_DB_PASSWORD"] = EcsSecret.FromSecretsManager(data.DatabaseSecret, "password")
+                },
+                Logging = LogDrivers.AwsLogs(
+                    new AwsLogDriverProps
+                    {
+                        LogGroup = MigrationLogGroup,
+                        StreamPrefix = "migration"
+                    })
+            });
+
         ApiService.TargetGroup.ConfigureHealthCheck(
             new Amazon.CDK.AWS.ElasticLoadBalancingV2.HealthCheck
             {
@@ -161,6 +242,7 @@ public sealed class ApplicationStack : Stack
             });
 
         data.DatabaseSecret.GrantRead(ExecutionRole);
+        data.DatabaseSecret.GrantRead(MigrationRole);
         storage.AttachmentBucket.GrantReadWrite(TaskRole);
         _ = new CfnSecurityGroupIngress(
             this,
@@ -169,10 +251,23 @@ public sealed class ApplicationStack : Stack
             {
                 GroupId = network.DatabaseSecurityGroup.SecurityGroupId,
                 IpProtocol = "tcp",
-                FromPort = 5432,
-                ToPort = 5432,
+                FromPort = 5433,
+                ToPort = 5433,
                 SourceSecurityGroupId = ApiSecurityGroup.SecurityGroupId,
                 Description = "API task access to PostgreSQL."
+            });
+
+        _ = new CfnSecurityGroupIngress(
+            this,
+            "MigrationPostgresIngress",
+            new CfnSecurityGroupIngressProps
+            {
+                GroupId = network.DatabaseSecurityGroup.SecurityGroupId,
+                IpProtocol = "tcp",
+                FromPort = 5433,
+                ToPort = 5433,
+                SourceSecurityGroupId = MigrationSecurityGroup.SecurityGroupId,
+                Description = "Migration task access to PostgreSQL."
             });
 
         TaskRole.AddToPolicy(
@@ -192,10 +287,72 @@ public sealed class ApplicationStack : Stack
             this,
             "ApiLoadBalancerDnsName",
             new CfnOutputProps { Value = ApiService.LoadBalancer.LoadBalancerDnsName });
+        _ = new CfnOutput(
+            this,
+            "ApiClusterName",
+            new CfnOutputProps { Value = Cluster.ClusterName });
+        _ = new CfnOutput(
+            this,
+            "MigrationTaskDefinitionArn",
+            new CfnOutputProps { Value = MigrationTaskDefinition.TaskDefinitionArn });
+        _ = new CfnOutput(
+            this,
+            "MigrationSecurityGroupId",
+            new CfnOutputProps { Value = MigrationSecurityGroup.SecurityGroupId });
+        _ = new CfnOutput(
+            this,
+            "PrivateSubnetIds",
+            new CfnOutputProps
+            {
+                Value = Fn.Join(",", network.Vpc.PrivateSubnets.Select(static subnet => subnet.SubnetId).ToArray())
+            });
 
         Amazon.CDK.Tags.Of(this).Add("Application", "HouseKeeper");
         Amazon.CDK.Tags.Of(this).Add("Environment", configuration.EnvironmentName);
         Amazon.CDK.Tags.Of(this).Add("ManagedBy", "AWS-CDK");
+
+        NagSuppressions.AddResourceSuppressions(
+            TaskRole,
+            new[]
+            {
+                new NagPackSuppression
+                {
+                    Id = "AwsSolutions-IAM5",
+                    Reason = "S3 object permissions and ECS Exec channel permissions require resource wildcards generated by their AWS APIs."
+                }
+            },
+            true);
+        NagSuppressions.AddResourceSuppressions(
+            ExecutionRole,
+            new[]
+            {
+                new NagPackSuppression
+                {
+                    Id = "AwsSolutions-IAM5",
+                    Reason = "ECR authorization and CloudWatch log delivery require AWS-managed wildcard resources; repository and log writes remain resource-scoped."
+                }
+            },
+            true);
+        NagSuppressions.AddStackSuppressions(
+            this,
+            new[]
+            {
+                new NagPackSuppression
+                {
+                    Id = "AwsSolutions-ECS2",
+                    Reason = "These values are non-secret endpoint and protocol configuration; the database credential is injected from Secrets Manager."
+                },
+                new NagPackSuppression
+                {
+                    Id = "AwsSolutions-ELB2",
+                    Reason = "ALB access logging is deferred for the shared development environment to avoid a second log bucket; request and application logs remain available."
+                },
+                new NagPackSuppression
+                {
+                    Id = "AwsSolutions-EC23",
+                    Reason = "The public ALB is the documented internet entry point and forwards only to private ECS tasks."
+                }
+            });
     }
 
     public Repository ApiRepository { get; }
@@ -208,5 +365,32 @@ public sealed class ApplicationStack : Stack
 
     public Role ExecutionRole { get; }
 
+    public Role MigrationRole { get; }
+
+    public FargateTaskDefinition MigrationTaskDefinition { get; }
+
     public SecurityGroup ApiSecurityGroup { get; }
+
+    public SecurityGroup MigrationSecurityGroup { get; }
+
+    public LogGroup ApiLogGroup { get; }
+
+    public LogGroup MigrationLogGroup { get; }
+
+    private LogGroup CreateLogGroup(
+        string id,
+        string purpose,
+        PlatformConfiguration configuration) => new(
+            this,
+            id,
+            new LogGroupProps
+            {
+                LogGroupName = $"/housekeeper/{configuration.EnvironmentName}/{purpose}",
+                Retention = configuration.IsProduction
+                    ? RetentionDays.ONE_YEAR
+                    : RetentionDays.ONE_MONTH,
+                RemovalPolicy = configuration.IsProduction
+                    ? RemovalPolicy.RETAIN
+                    : RemovalPolicy.DESTROY
+            });
 }

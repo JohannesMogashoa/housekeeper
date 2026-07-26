@@ -31,6 +31,9 @@
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL"
                     Version="10.0.3" />
 
+    <PackageVersion Include="Npgsql"
+                    Version="10.0.3" />
+
     <PackageVersion Include="Microsoft.Testing.Extensions.CodeCoverage"
                     Version="18.9.0" />
 
@@ -51,5 +54,8 @@
 
     <PackageVersion Include="Amazon.CDK.Lib"
                     Version="2.262.1" />
+
+    <PackageVersion Include="Cdklabs.CdkNag"
+                    Version="2.37.56" />
   </ItemGroup>
 </Project>

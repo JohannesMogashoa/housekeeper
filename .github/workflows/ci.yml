@@ -83,6 +83,18 @@ jobs:
           cd deploy/aws
           cdk synth --strict 2>&1 | tee ../../artifacts/cdk-synth.log
 
+      - name: Verify AWS policy reports
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/cdk-nag
+          find deploy/aws/cdk.out -name 'AwsSolutions-*-NagReport.csv' -exec cp {} artifacts/cdk-nag/ \;
+          test -n "$(find artifacts/cdk-nag -name '*.csv' -print -quit)"
+          if grep -R --fixed-strings --quiet 'Non-Compliant' artifacts/cdk-nag; then
+            echo 'CDK Nag reported an unsuppressed non-compliant finding.' >&2
+            exit 1
+          fi
+
       - name: Build non-root API container
         run: docker build --file deploy/containers/HouseKeeper.Api.Dockerfile --tag housekeeper-api:ci .
 

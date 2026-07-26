@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <PackageReference Include="Amazon.CDK.Lib" />
+    <PackageReference Include="Cdklabs.CdkNag" />
   </ItemGroup>
 
   <ItemGroup>

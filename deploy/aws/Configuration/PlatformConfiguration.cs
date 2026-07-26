@@ -19,6 +19,10 @@ public sealed record PlatformConfiguration
 
     public string? ApiDomainName { get; init; }
 
+    public string? ApiImageUri { get; init; }
+
+    public int ApiDesiredCount { get; init; } = 1;
+
     public string CognitoDomainPrefix { get; init; } = "housekeeper-development";
 
     public IReadOnlyList<string> CallbackUrls { get; init; } =
@@ -48,6 +52,8 @@ public sealed record PlatformConfiguration
             GitHubBranch = Get("HOUSEKEEPER_GITHUB_BRANCH", "master"),
             ApiCertificateArn = GetOptional("HOUSEKEEPER_API_CERTIFICATE_ARN"),
             ApiDomainName = GetOptional("HOUSEKEEPER_API_DOMAIN_NAME"),
+            ApiImageUri = GetOptional("HOUSEKEEPER_API_IMAGE_URI"),
+            ApiDesiredCount = GetInt("HOUSEKEEPER_API_DESIRED_COUNT", 1),
             CognitoDomainPrefix = Get(
                 "HOUSEKEEPER_COGNITO_DOMAIN_PREFIX",
                 $"housekeeper-{Get("HOUSEKEEPER_ENVIRONMENT", "development")}"),
@@ -83,6 +89,12 @@ public sealed record PlatformConfiguration
                 "Cognito callback and logout URL lists must not be empty.");
         }
 
+        if (ApiDesiredCount < 0)
+        {
+            throw new InvalidOperationException(
+                "HOUSEKEEPER_API_DESIRED_COUNT must be zero or greater.");
+        }
+
         if (IsProtectedEnvironment && string.IsNullOrWhiteSpace(Account))
         {
             throw new InvalidOperationException(
@@ -105,6 +117,16 @@ public sealed record PlatformConfiguration
     {
         string? value = Environment.GetEnvironmentVariable(name)?.Trim();
         return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    private static int GetInt(string name, int fallback)
+    {
+        string? value = GetOptional(name);
+        return value is null
+            ? fallback
+            : int.TryParse(value, out int parsed)
+                ? parsed
+                : throw new InvalidOperationException($"{name} must be a valid integer.");
     }
 
     private static string[] GetList(string name, string fallback) =>
