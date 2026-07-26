@@ -44,25 +44,26 @@ else
 {
     string authority = builder.Configuration["Authentication:Cognito:Authority"]?.Trim()
         ?? string.Empty;
-    string audience = builder.Configuration["Authentication:Cognito:Audience"]?.Trim()
+    string clientId = builder.Configuration["Authentication:Cognito:ClientId"]?.Trim()
         ?? string.Empty;
-    if (authority.Length == 0 || audience.Length == 0)
+    if (authority.Length == 0 || clientId.Length == 0)
     {
         throw new InvalidOperationException(
-            "Cognito authority and audience are required outside local development.");
+            "Cognito authority and client ID are required outside local development.");
     }
 
     _ = authentication.AddJwtBearer(options =>
     {
         options.Authority = authority;
-        options.Audience = audience;
         options.MapInboundClaims = true;
         options.TokenValidationParameters = new TokenValidationParameters
         {
             NameClaimType = ClaimTypes.Name,
             RoleClaimType = ClaimTypes.Role,
             ValidateIssuer = true,
-            ValidateAudience = true,
+            // Cognito access tokens identify the app client with `client_id`, not
+            // the JWT `aud` claim used by ASP.NET Core's audience validator.
+            ValidateAudience = false,
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
             ClockSkew = TimeSpan.FromMinutes(1)
@@ -76,6 +77,15 @@ else
                 if (string.IsNullOrWhiteSpace(subject))
                 {
                     context.Fail("The access token does not contain a subject.");
+                    return Task.CompletedTask;
+                }
+
+                string? tokenUse = context.Principal?.FindFirst("token_use")?.Value;
+                string? tokenClientId = context.Principal?.FindFirst("client_id")?.Value;
+                if (!string.Equals(tokenUse, "access", StringComparison.Ordinal) ||
+                    !string.Equals(tokenClientId, clientId, StringComparison.Ordinal))
+                {
+                    context.Fail("The token is not an access token for this application.");
                 }
 
                 return Task.CompletedTask;
@@ -88,13 +98,19 @@ builder.Services.AddAuthorization();
 
 builder.Services.AddCors(options =>
 {
+    string[] allowedOrigins = builder.Configuration
+        .GetSection("Cors:AllowedOrigins")
+        .Get<string[]>()
+        ?? [];
+    if (allowedOrigins.Length == 0)
+    {
+        throw new InvalidOperationException("At least one CORS origin is required.");
+    }
+
     options.AddPolicy("HouseKeeperWeb", policy =>
     {
         policy
-            .WithOrigins(
-                "http://localhost:5136",
-                "http://127.0.0.1:5136",
-                "https://localhost:7229")
+            .WithOrigins(allowedOrigins)
             .AllowAnyHeader()
             .AllowAnyMethod();
     });
@@ -144,6 +160,7 @@ app.MapGet("/api/me", (ClaimsPrincipal principal) =>
 {
     string? subject = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
     string? displayName = principal.Identity?.Name
+        ?? principal.FindFirst("cognito:username")?.Value
         ?? principal.FindFirst("preferred_username")?.Value
         ?? principal.FindFirst(ClaimTypes.Email)?.Value
         ?? subject;
