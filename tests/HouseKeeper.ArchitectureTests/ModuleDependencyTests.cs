@@ -62,4 +62,23 @@ public sealed class ModuleDependencyTests
             references,
             reference => reference.Name == typeof(HouseholdsModule).Assembly.GetName().Name);
     }
+
+    [Fact]
+    public void ContractsAndModulesDoNotReferenceAwsProviderAssemblies()
+    {
+        System.Reflection.Assembly[] applicationAssemblies =
+        [
+            typeof(HouseholdSummary).Assembly,
+            typeof(HouseholdsModule).Assembly
+        ];
+
+        foreach (System.Reflection.Assembly assembly in applicationAssemblies)
+        {
+            Assert.DoesNotContain(
+                assembly.GetReferencedAssemblies(),
+                reference => reference.Name is not null &&
+                    (reference.Name.StartsWith("Amazon.", StringComparison.Ordinal) ||
+                     reference.Name.StartsWith("AWSSDK.", StringComparison.Ordinal)));
+        }
+    }
 }

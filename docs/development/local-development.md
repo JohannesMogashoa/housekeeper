@@ -9,6 +9,7 @@ This guide is the supported local-development contract for the HouseKeeper found
 - Bash on macOS/Linux or PowerShell 7 on Windows
 - Git
 - A modern Chromium-based browser for the automated browser journey
+- Node.js 18 or later when running the AWS CDK synthesis checks
 
 Repository manifests pin the .NET SDK line, local .NET tools, NuGet package versions and test platform. Do not install PostgreSQL directly for the normal inner loop.
 
@@ -41,7 +42,7 @@ pwsh ./scripts/dev.ps1
 
 The command:
 
-1. starts PostgreSQL 18.4 through `deploy/local/compose.yaml`;
+1. starts PostgreSQL 18.4 and the pinned MinIO S3-compatible emulator through `deploy/local/compose.yaml`;
 2. restores repository tools and packages;
 3. waits for database readiness;
 4. applies the Households migrations explicitly;
@@ -52,11 +53,15 @@ Open `http://localhost:5136`, establish a development identity and create a hous
 
 The development identity is deliberately local-only. It exercises the same authentication and authorization middleware boundary that the production identity provider will use, but it is not production authentication.
 
+The local S3-compatible endpoint is `http://localhost:9000` with console
+`http://localhost:9001`. It is for provider-neutral attachment tests only and
+must never be used with production credentials or data.
+
 ## Stop or reset
 
 Stop the foreground application processes with `Ctrl+C`.
 
-PostgreSQL data remains in the named Docker volume. To remove the database and start from a clean state:
+PostgreSQL and local S3 data remain in named Docker volumes. To remove both and start from a clean state:
 
 ```bash
 docker compose -f deploy/local/compose.yaml down --volumes
@@ -79,6 +84,23 @@ dotnet ef database update \
 ```
 
 The API does not apply production schema changes during startup. New modules must follow the same rule and own their context, schema and migration history.
+
+## AWS deployment foundation
+
+The repository's approved shared and production platform is AWS in `af-south-1`. Local development remains cloud-independent and uses Docker Compose PostgreSQL plus the Development-only identity. Do not use AWS credentials for the normal inner loop.
+
+From the repository root, the infrastructure checks are:
+
+```bash
+dotnet restore deploy/aws/HouseKeeper.Infrastructure.csproj
+dotnet build deploy/aws/HouseKeeper.Infrastructure.csproj --configuration Release --no-restore
+dotnet test deploy/aws/tests/HouseKeeper.Infrastructure.Tests/HouseKeeper.Infrastructure.Tests.csproj --configuration Release
+npm install --global aws-cdk@2.1132.1
+cd deploy/aws
+cdk synth --strict
+```
+
+The CDK app defaults to a development-safe configuration. Shared or production synthesis requires explicit region, account, callback URLs, repository identity, certificate and domain inputs. Deployment requires GitHub OIDC or an equivalent short-lived AWS role; long-lived access keys and committed secret values are not supported.
 
 ## Standard verification
 

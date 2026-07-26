@@ -18,8 +18,9 @@ Wave 1 — close discovery validation
   HK-16 Physical-device PWA validation
 
 Wave 2 — production trust and delivery boundary
-  HK-17 Entra External ID integration
-  HK-18 Azure development environment and OIDC pipeline
+  HK-28 AWS platform adoption and deployment foundation
+  HK-17 Amazon Cognito User Pools integration
+  HK-18 AWS development environment and OIDC pipeline
 
 Wave 3 — household and command foundations
   HK-19 Household invitations and membership roles
@@ -61,20 +62,39 @@ The approved PWA-first decision has recorded evidence on representative Android 
 - Compressed initial payload, first launch and repeat launch observations are recorded on a representative South African mobile connection.
 - Browser-specific limitations are added to the technical recommendation.
 
-## HK-17 — Integrate Microsoft Entra External ID
+## HK-28 — Adopt AWS as the HouseKeeper cloud platform
 
-**Priority:** P0  
-**Estimate:** L  
-**Dependencies:** HK-15; existing development authentication boundary
+**Priority:** P0
+**Estimate:** L
+**Dependencies:** HK-15 technical recommendation
 
 ### Outcome
 
-A real external user can sign in through Entra External ID, the API validates the token, and the subject maps to an application member without trusting provider roles for household authorization.
+HouseKeeper has one internally consistent AWS platform decision and a buildable, reviewable CDK/container foundation for later Cognito and shared-environment work.
+
+### Acceptance criteria
+
+- The technical recommendation and ADR index identify AWS, `af-south-1`, Cognito, ECS Fargate, S3/CloudFront, RDS PostgreSQL, CloudWatch/X-Ray and GitHub OIDC as the active baseline.
+- Superseded Azure, Entra, Bicep, App Service, Azure Blob Storage and Azurite decisions are explicitly marked historical or removed from active guidance.
+- A buildable C# CDK app defines composable network, data, identity, storage, application, delivery and observability resources.
+- The API container builds reproducibly and runs as a non-root user.
+- CDK strict synth, security/policy checks, unit tests and reviewed diff commands are documented and runnable.
+- Runtime and migration permissions, secrets handling, deletion protection, cost controls and teardown boundaries are explicit.
+
+## HK-17 — Integrate Amazon Cognito User Pools
+
+**Priority:** P0  
+**Estimate:** L  
+**Dependencies:** HK-28; existing development authentication boundary
+
+### Outcome
+
+A real external user can sign in through Amazon Cognito User Pools, the API validates the token, and the subject maps to an application member without trusting provider roles for household authorization.
 
 ### Acceptance criteria
 
 - Separate local, CI and shared-development authentication modes are documented.
-- The PWA completes authorization-code flow with PKCE using supported Microsoft libraries.
+- The PWA completes authorization-code flow with PKCE using a public Cognito app client with no client secret.
 - The API validates issuer, audience, lifetime and signing keys.
 - External subject mapping is unique and immutable.
 - Development authentication cannot activate outside `Development`.
@@ -82,26 +102,26 @@ A real external user can sign in through Entra External ID, the API validates th
 - Invalid issuer, invalid audience, expired token, missing subject and cross-household access tests pass.
 - No client secret, storage credential or privileged token enters the PWA.
 
-## HK-18 — Provision the shared Azure development environment
+## HK-18 — Provision the shared AWS development environment
 
 **Priority:** P0  
 **Estimate:** L  
-**Dependencies:** HK-15 hosting decision
+**Dependencies:** HK-28 hosting decision
 
 ### Outcome
 
-A reproducible shared development environment is provisioned in South Africa North and deployed from GitHub without long-lived Azure credentials.
+A reproducible shared development environment is provisioned in `af-south-1` and deployed from GitHub without long-lived AWS access keys.
 
 ### Acceptance criteria
 
-- Bicep modules cover Static Web Apps, Linux App Service, PostgreSQL Flexible Server, Storage, Key Vault, monitoring, budgets and role assignments as applicable.
+- CDK stacks cover VPC/networking, ECS Fargate/ALB/ECR, private S3/CloudFront, RDS PostgreSQL, Cognito, Secrets Manager/Parameter Store, CloudWatch, budgets and role assignments as applicable.
 - GitHub authenticates through OIDC federation.
-- App Service uses managed identity for supported Azure access.
+- ECS tasks use task roles and the migration task uses a separate narrowly scoped role.
 - Development resources use synthetic/disposable data and an isolated resource group.
-- Bicep validation and `what-if` run in pull requests.
+- CDK strict synth, policy/security checks and reviewed diffs run in pull requests.
 - A protected workflow applies infrastructure, migrations, API and PWA artifacts.
 - Readiness and authenticated smoke tests pass after deployment.
-- Resource names, tags, retention, budgets and teardown guidance are documented.
+- Resource names, tags, retention, budgets, deletion protection and teardown guidance are documented.
 
 ## HK-19 — Implement household invitations and membership roles
 
@@ -214,17 +234,17 @@ A household member can define a simple recurring routine, materialize occurrence
 
 ### Outcome
 
-An authorized household member can upload an approved image or PDF directly to Azure Blob Storage, pass validation/scanning, and link the ready attachment to a test owner record.
+An authorized household member can upload an approved image or PDF directly to private Amazon S3, pass validation/scanning, and link the ready attachment to a test owner record.
 
 ### Acceptance criteria
 
 - The Attachments module owns its PostgreSQL schema and lifecycle state.
-- Production uses managed identity and user-delegation SAS; shared account keys are not the application path.
+- Production uses ECS task roles and short-lived SigV4 presigned grants; shared access keys are not the application path.
 - Upload grants are exact-object, short-lived and cannot list or overwrite arbitrary blobs.
 - Size, media type, file signature, household quota and ownership checks are server-enforced.
 - Malware scan results enter an idempotent inbox before an attachment becomes `Ready`.
 - Rejected, abandoned and delete-pending objects are durably cleaned up.
-- Azurite supports the local path; focused Azure smoke tests prove SAS, CORS and event integration.
+- A pinned S3-compatible emulator supports the local path; focused AWS smoke tests prove presigning, CORS and event integration.
 - Cross-household upload, download and linking attempts are denied and tested.
 
 ## HK-25 — Build Notifications and Web Push vertical slice
@@ -260,12 +280,12 @@ The shared environment exposes actionable telemetry and has tested deployment, r
 
 ### Acceptance criteria
 
-- OpenTelemetry-compatible traces, metrics and structured logs export to Azure Monitor/Application Insights.
+- OpenTelemetry-compatible traces, metrics and structured logs export to CloudWatch and X-Ray.
 - Trace context spans PWA requests, API handling, database operations and background dispatch where practical.
 - Dashboards cover API health, latency, failures, PostgreSQL saturation, queue age, retries, storage/scanning failures and authorization denials.
 - Alerts have an owner, severity, threshold rationale and response note.
-- A PostgreSQL restore drill is executed into an isolated target and records observed recovery point/time.
-- Blob soft-delete and reconciliation behaviour are tested.
+- An RDS PostgreSQL restore drill is executed into an isolated target and records observed recovery point/time.
+- S3 versioning, lifecycle, object ownership and reconciliation behaviour are tested.
 - Deployment rollback restores the prior application artifact without attempting unsafe down-migrations.
 - Runbooks cover deployment failure, migration failure, database restore and background-queue backlog.
 
@@ -283,7 +303,7 @@ The architecture baseline is proven in a production-like environment and the rep
 
 - All P0 Foundation tasks are Done and linked to evidence.
 - The complete solution restores, builds, tests and publishes from a clean runner.
-- A new environment can be provisioned from Bicep and configured without undocumented manual changes.
+- A new environment can be provisioned from C# CDK and configured without undocumented manual changes.
 - Production-style authentication, household authorization, offline replay and durable event delivery pass end-to-end.
 - The first Tasks slice survives browser reload, API restart and redeployment.
 - Security scanning and negative authorization tests are green.

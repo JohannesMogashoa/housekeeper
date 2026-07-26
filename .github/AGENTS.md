@@ -7,7 +7,7 @@ These instructions apply to `.github/` in addition to the repository root `AGENT
 - Declare workflow permissions explicitly and keep them at the minimum required scope.
 - Pull-request workflows must not receive production credentials, deployment roles, publish profiles, or writable tokens unless a reviewed trusted-event design requires them.
 - Do not execute untrusted fork or pull-request code in a privileged workflow context.
-- Prefer GitHub OIDC for Azure authentication; avoid long-lived service-principal secrets.
+- Prefer GitHub OIDC for AWS authentication; avoid long-lived access keys.
 - Pin third-party actions to immutable commit SHAs where practical and review supply-chain impact when updating them.
 
 ## Build and validation
@@ -21,7 +21,7 @@ These instructions apply to `.github/` in addition to the repository root `AGENT
 ## Deployment workflows
 
 - Protected environment deployment requires deliberate approval where defined.
-- Infrastructure changes run Bicep validation and `what-if` before apply.
+- Infrastructure changes run C# CDK build, strict synth, policy/security checks and reviewed diff before apply.
 - Migrations use a protected identity separate from runtime access and remain explicit.
 - Post-deployment readiness and authenticated smoke checks must fail the workflow when the environment is unhealthy.
 - Rollback restores prior application artifacts and never assumes destructive down-migrations are safe.

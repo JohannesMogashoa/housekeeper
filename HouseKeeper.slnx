@@ -24,7 +24,14 @@
     </Folder>
     <Folder Name="/Solution Items/deploy/">
       <File Path="deploy/AGENTS.md" />
-      <Folder Name="/Solution Items/deploy/containers/" />
+      <Folder Name="/Solution Items/deploy/aws/">
+        <File Path="deploy/aws/cdk.json" />
+        <File Path="deploy/aws/README.md" />
+      </Folder>
+      <Folder Name="/Solution Items/deploy/containers/">
+        <File Path="deploy/containers/.dockerignore" />
+        <File Path="deploy/containers/HouseKeeper.Api.Dockerfile" />
+      </Folder>
       <Folder Name="/Solution Items/deploy/environments/" />
       <Folder Name="/Solution Items/deploy/local/">
         <File Path="deploy/local/compose.yaml" />
@@ -73,5 +80,11 @@
   </Folder>
   <Folder Name="/tests/Modules/">
     <Project Path="tests/Modules/HouseKeeper.Modules.Households.Tests/HouseKeeper.Modules.Households.Tests.csproj" />
+  </Folder>
+  <Folder Name="/deploy/aws/">
+    <Project Path="deploy/aws/HouseKeeper.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/deploy/aws/tests/">
+    <Project Path="deploy/aws/tests/HouseKeeper.Infrastructure.Tests/HouseKeeper.Infrastructure.Tests.csproj" />
   </Folder>
 </Solution>

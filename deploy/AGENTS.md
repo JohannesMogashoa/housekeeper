@@ -4,18 +4,18 @@ These instructions apply to `deploy/` in addition to the repository root `AGENTS
 
 ## Identity and secrets
 
-- GitHub-to-Azure authentication uses OpenID Connect federation with narrow repository, branch/environment, and audience trust.
-- Application access uses managed identity wherever supported.
+- GitHub-to-AWS authentication uses OpenID Connect federation with narrow repository, branch/environment, and audience trust.
+- Application access uses short-lived ECS task roles wherever supported.
 - Long-lived service-principal secrets, publish profiles, storage account keys, and committed credentials are not the default path.
-- Secrets are not printed, uploaded as artifacts, emitted as Bicep outputs, or passed to untrusted pull-request code.
+- Secrets are not printed, uploaded as artifacts, emitted as infrastructure outputs, or passed to untrusted pull-request code.
 
-## Bicep and environments
+## CDK and environments
 
 - Resource location, naming, tags, environment isolation, ownership, retention, budgets, and role assignments are explicit.
-- Infrastructure changes run Bicep build/lint and `what-if` before protected apply.
+- Infrastructure changes run C# build, CDK synth, policy/security checks and reviewed `cdk diff` before protected apply.
 - Modules expose narrow typed parameters/outputs and avoid hidden portal-only dependencies.
 - Repeated deployment is idempotent and teardown guidance is maintained for disposable environments.
-- South Africa North remains the initial regional placement unless a documented decision supersedes it.
+- `af-south-1` remains the initial regional placement unless a documented decision supersedes it.
 
 ## Database and migrations
 
@@ -45,4 +45,4 @@ These instructions apply to `deploy/` in addition to the repository root `AGENTS
 - Call out cost-significant resources and Defender or telemetry-ingestion changes.
 - Destructive, irreversible, or downtime-bearing changes require a safe rollout and recovery plan.
 
-Treat excessive permissions, secret exposure, implicit migrations, missing `what-if`, artifact rebuilding, unsafe rollback, or absent environment isolation as material review findings.
+Treat excessive permissions, secret exposure, implicit migrations, missing CDK synth/diff evidence, artifact rebuilding, unsafe rollback, or absent environment isolation as material review findings.
