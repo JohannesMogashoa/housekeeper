@@ -4,6 +4,9 @@ namespace HouseKeeper.Web.Services;
 
 public sealed class DevelopmentSession(IJSRuntime jsRuntime)
 {
+    public const string SubjectHeader = "X-HouseKeeper-Subject";
+    public const string DisplayNameHeader = "X-HouseKeeper-Display-Name";
+
     private const string SubjectKey = "housekeeper.dev.subject";
     private const string DisplayNameKey = "housekeeper.dev.displayName";
 

@@ -114,8 +114,9 @@ public sealed class ApplicationStack : Stack
                     {
                         ["ASPNETCORE_HTTP_PORTS"] = "8080",
                         ["HOUSEKEEPER_AWS_REGION"] = configuration.Region,
-                        ["Cognito__UserPoolId"] = identity.UserPool.UserPoolId,
-                        ["Cognito__ClientId"] = identity.WebClient.UserPoolClientId
+                        ["Authentication__Mode"] = "Cognito",
+                        ["Authentication__Cognito__Authority"] = identity.Issuer,
+                        ["Authentication__Cognito__Audience"] = "housekeeper-api"
                     },
                     Secrets = new Dictionary<string, EcsSecret>
                     {

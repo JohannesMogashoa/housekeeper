@@ -123,5 +123,6 @@ public static class HouseholdsModule
     }
 
     private static string? GetSubject(ClaimsPrincipal principal) =>
-        principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        principal.FindFirst(ClaimTypes.NameIdentifier)?.Value
+        ?? principal.FindFirst("sub")?.Value;
 }

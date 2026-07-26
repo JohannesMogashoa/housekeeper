@@ -59,3 +59,16 @@ startup never changes the production schema.
 
 No AWS credentials, access tokens, database passwords, or object contents are
 placed in images, browser assets, logs, or CloudFormation outputs.
+
+`IdentityStack` emits the user-pool issuer, hosted-login authority, and public
+web client ID as deployment outputs. The API consumes the issuer and
+`housekeeper-api` audience through ECS environment configuration. The PWA
+consumes only the hosted-login authority, public client ID, scopes, callback
+URL, logout URL, and API base URL. A client secret is neither generated nor
+required.
+
+After deploying shared development, validate the human journey with a
+disposable Cognito user: create the account, verify the email, sign in through
+managed login, create a household, sign out, and sign in again. Confirm that
+removing the membership denies household access even though Cognito
+authentication still succeeds.

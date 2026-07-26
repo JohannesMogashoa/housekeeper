@@ -7,17 +7,12 @@ namespace HouseKeeper.Web.Services;
 
 public sealed class HouseKeeperApiClient(HttpClient httpClient)
 {
-    private const string SubjectHeader = "X-HouseKeeper-Subject";
-    private const string DisplayNameHeader = "X-HouseKeeper-Display-Name";
-
-    public async Task<CurrentUserResponse> AuthenticateAsync(
-        DevelopmentIdentity identity,
+    public async Task<CurrentUserResponse> GetCurrentUserAsync(
+        IApiAuthentication authentication,
         CancellationToken cancellationToken = default)
     {
-        using HttpRequestMessage request = CreateRequest(
-            HttpMethod.Get,
-            "api/me",
-            identity);
+        using HttpRequestMessage request = new(HttpMethod.Get, "api/me");
+        await authentication.AttachAsync(request, cancellationToken);
         using HttpResponseMessage response = await httpClient.SendAsync(
             request,
             cancellationToken);
@@ -31,13 +26,11 @@ public sealed class HouseKeeperApiClient(HttpClient httpClient)
     }
 
     public async Task<IReadOnlyList<HouseholdSummary>> ListHouseholdsAsync(
-        DevelopmentIdentity identity,
+        IApiAuthentication authentication,
         CancellationToken cancellationToken = default)
     {
-        using HttpRequestMessage request = CreateRequest(
-            HttpMethod.Get,
-            "api/households",
-            identity);
+        using HttpRequestMessage request = new(HttpMethod.Get, "api/households");
+        await authentication.AttachAsync(request, cancellationToken);
         using HttpResponseMessage response = await httpClient.SendAsync(
             request,
             cancellationToken);
@@ -50,14 +43,12 @@ public sealed class HouseKeeperApiClient(HttpClient httpClient)
     }
 
     public async Task<HouseholdSummary> CreateHouseholdAsync(
-        DevelopmentIdentity identity,
+        IApiAuthentication authentication,
         string householdName,
         CancellationToken cancellationToken = default)
     {
-        using HttpRequestMessage request = CreateRequest(
-            HttpMethod.Post,
-            "api/households",
-            identity);
+        using HttpRequestMessage request = new(HttpMethod.Post, "api/households");
+        await authentication.AttachAsync(request, cancellationToken);
         request.Content = JsonContent.Create(new CreateHouseholdRequest(householdName));
 
         using HttpResponseMessage response = await httpClient.SendAsync(
@@ -70,16 +61,5 @@ public sealed class HouseKeeperApiClient(HttpClient httpClient)
             cancellationToken)
             ?? throw new InvalidOperationException(
                 "The API returned an empty household response.");
-    }
-
-    private static HttpRequestMessage CreateRequest(
-        HttpMethod method,
-        string requestUri,
-        DevelopmentIdentity identity)
-    {
-        HttpRequestMessage request = new(method, requestUri);
-        request.Headers.Add(SubjectHeader, identity.Subject);
-        request.Headers.Add(DisplayNameHeader, identity.DisplayName);
-        return request;
     }
 }
