@@ -49,9 +49,32 @@ The command:
 5. starts the API at `http://localhost:5287`;
 6. starts the PWA at `http://localhost:5136`.
 
-Open `http://localhost:5136`, establish a development identity and create a household.
+Open `http://localhost:5136`, choose `Sign in`, enter a development display name,
+and create a household. The page labels this as Development sign-in so it is
+clear that this is a local learning path rather than production authentication.
 
 The development identity is deliberately local-only. It exercises the same authentication and authorization middleware boundary that the production identity provider will use, but it is not production authentication.
+
+## Cognito authentication modes
+
+The repository has three intentional modes:
+
+- `Development`: local headers and a browser-local synthetic identity; only the
+  API `Development` environment can activate this mode.
+- `CI`: deterministic API signing keys and component/browser contract tests;
+  CI does not depend on a shared Cognito user or AWS credentials.
+- `shared-development`: Cognito managed login with authorization code + PKCE,
+  a disposable test user, and the environment-specific public client settings.
+
+For shared development, configure the PWA public values from the CDK
+`HouseKeeperIdentity` outputs: hosted-login authority, web client ID, API
+base URL, callback URL, and logout URL. These values are safe for browser
+configuration; client secrets and AWS credentials are never required.
+
+The sign-in page intentionally explains that Cognito verifies identity while
+HouseKeeper membership rows determine household access. Passwords, recovery
+codes, access tokens, and refresh tokens must remain out of logs and support
+artifacts.
 
 The local S3-compatible endpoint is `http://localhost:9000` with console
 `http://localhost:9001`. It is for provider-neutral attachment tests only and

@@ -86,6 +86,23 @@ public sealed class ApplicationStack : Stack
         ExecutionRole.AddManagedPolicy(
             ManagedPolicy.FromAwsManagedPolicyName("service-role/AmazonECSTaskExecutionRolePolicy"));
 
+        Dictionary<string, string> taskEnvironment = new()
+        {
+            ["ASPNETCORE_HTTP_PORTS"] = "8080",
+            ["HOUSEKEEPER_AWS_REGION"] = configuration.Region,
+            ["Authentication__Mode"] = "Cognito",
+            ["Authentication__Cognito__Authority"] = identity.Issuer,
+            ["Authentication__Cognito__ClientId"] = identity.WebClient.UserPoolClientId
+        };
+        string[] pwaOrigins = configuration.CallbackUrls
+            .Select(static url => new Uri(url).GetLeftPart(UriPartial.Authority))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        for (int index = 0; index < pwaOrigins.Length; index++)
+        {
+            taskEnvironment[$"Cors__AllowedOrigins__{index}"] = pwaOrigins[index];
+        }
+
         ApiService = new ApplicationLoadBalancedFargateService(
             this,
             "ApiService",
@@ -110,13 +127,7 @@ public sealed class ApplicationStack : Stack
                     EnableLogging = true,
                     ExecutionRole = ExecutionRole,
                     TaskRole = TaskRole,
-                    Environment = new Dictionary<string, string>
-                    {
-                        ["ASPNETCORE_HTTP_PORTS"] = "8080",
-                        ["HOUSEKEEPER_AWS_REGION"] = configuration.Region,
-                        ["Cognito__UserPoolId"] = identity.UserPool.UserPoolId,
-                        ["Cognito__ClientId"] = identity.WebClient.UserPoolClientId
-                    },
+                    Environment = taskEnvironment,
                     Secrets = new Dictionary<string, EcsSecret>
                     {
                         ["ConnectionStrings__HouseKeeper"] = EcsSecret.FromSecretsManager(data.DatabaseSecret)

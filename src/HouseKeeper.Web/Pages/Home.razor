@@ -1,11 +1,15 @@
 @page "/"
 
+@using HouseKeeper.Contracts.Authentication
 @using HouseKeeper.Contracts.Households
 @using HouseKeeper.Web.Components
 @using HouseKeeper.Web.Services
 
-@inject DevelopmentSession Session
+@inject IConfiguration Configuration
+@inject IApiAuthentication Authentication
 @inject HouseKeeperApiClient ApiClient
+@inject NavigationManager Navigation
+@inject IServiceProvider Services
 
 <PageTitle>HouseKeeper</PageTitle>
 
@@ -14,8 +18,8 @@
         <p class="text-uppercase text-secondary fw-semibold mb-1">HouseKeeper</p>
         <h1>Know what your home needs today.</h1>
         <p class="lead text-secondary">
-            This walking skeleton proves authentication, household ownership,
-            PostgreSQL persistence, and the installable web application end to end.
+            Sign in securely, then HouseKeeper uses your household membership to decide
+            what you can access.
         </p>
     </header>
 
@@ -26,30 +30,43 @@
         </div>
     }
 
-    @if (identity is null)
+    @if (currentUser is null)
     {
-        <section class="card shadow-sm">
+        <section class="card shadow-sm" aria-labelledby="sign-in-heading">
             <div class="card-body p-4">
-                <h2 class="h4">Development sign-in</h2>
+                <h2 id="sign-in-heading" class="h4">
+                    @(isDevelopmentAuthentication ? "Development sign-in" : "Sign in to HouseKeeper")
+                </h2>
                 <p class="text-secondary">
-                    Enter a display name. A stable development identity will be stored
-                    in this browser and authenticated by the local API.
+                    @(isDevelopmentAuthentication
+                        ? "Local development uses a temporary browser identity. It is disabled outside the Development environment."
+                        : "Cognito securely handles your password, email verification, and account recovery. HouseKeeper never receives your password.")
                 </p>
 
-                <label class="form-label" for="display-name">Display name</label>
-                <input id="display-name"
-                       class="form-control"
-                       data-testid="display-name"
-                       maxlength="120"
-                       @bind="displayName"
-                       @bind:event="oninput" />
+                @if (isDevelopmentAuthentication)
+                {
+                    <label class="form-label" for="display-name">Display name</label>
+                    <input id="display-name"
+                           class="form-control"
+                           data-testid="display-name"
+                           maxlength="120"
+                           @bind="displayName"
+                           @bind:event="oninput" />
+                }
 
                 <button class="btn btn-primary mt-3"
                         data-testid="sign-in"
                         disabled="@isBusy"
                         @onclick="SignInAsync">
-                    @(isBusy ? "Signing in…" : "Continue")
+                    @(isBusy ? "Opening secure sign-in…" : "Sign in")
                 </button>
+
+                @if (!isDevelopmentAuthentication)
+                {
+                    <p class="small text-secondary mt-3 mb-0">
+                        New here? The secure sign-in page lets you create and verify an account.
+                    </p>
+                }
             </div>
         </section>
     }
@@ -58,7 +75,7 @@
         <section class="d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-3 mb-4">
             <div>
                 <span class="text-secondary">Signed in as</span>
-                <strong data-testid="current-user">@identity.DisplayName</strong>
+                <strong data-testid="current-user">@currentUser.DisplayName</strong>
             </div>
             <button class="btn btn-outline-secondary btn-sm"
                     disabled="@isBusy"
@@ -71,7 +88,7 @@
             <div class="card-body p-4">
                 <h2 class="h4">Create your household</h2>
                 <p class="text-secondary">
-                    The API creates the household and your owner membership in one transaction.
+                    Household access is owned by HouseKeeper membership, not by Cognito roles.
                 </p>
 
                 <label class="form-label" for="household-name">Household name</label>
@@ -107,47 +124,65 @@
 </div>
 
 @code {
-    private DevelopmentIdentity? identity;
+    private CurrentUserResponse? currentUser;
     private IReadOnlyList<HouseholdSummary> households = [];
     private string displayName = string.Empty;
     private string householdName = string.Empty;
     private string? errorMessage;
     private bool isBusy;
+    private bool isDevelopmentAuthentication;
 
     protected override async Task OnInitializedAsync()
     {
-        identity = await Session.LoadAsync();
-        if (identity is not null)
+        isDevelopmentAuthentication = string.Equals(
+            Configuration["Authentication:Mode"],
+            "Development",
+            StringComparison.OrdinalIgnoreCase);
+
+        if (await Authentication.IsAuthenticatedAsync())
         {
             await ExecuteAsync(LoadHouseholdsCoreAsync);
         }
     }
 
-    private Task SignInAsync() => ExecuteAsync(async () =>
+    private Task SignInAsync()
     {
-        identity = await Session.SignInAsync(displayName);
-        _ = await ApiClient.AuthenticateAsync(identity);
-        households = await ApiClient.ListHouseholdsAsync(identity);
-        displayName = string.Empty;
-    });
+        if (!isDevelopmentAuthentication)
+        {
+            Navigation.NavigateTo("authentication/login", forceLoad: true);
+            return Task.CompletedTask;
+        }
 
-    private Task SignOutAsync() => ExecuteAsync(async () =>
+        return ExecuteAsync(async () =>
+        {
+            DevelopmentSession session = GetDevelopmentSession();
+            _ = await session.SignInAsync(displayName);
+            await LoadHouseholdsCoreAsync();
+            displayName = string.Empty;
+        });
+    }
+
+    private Task SignOutAsync()
     {
-        await Session.SignOutAsync();
-        identity = null;
-        households = [];
-        householdName = string.Empty;
-    });
+        if (!isDevelopmentAuthentication)
+        {
+            Navigation.NavigateTo("authentication/logout", forceLoad: true);
+            return Task.CompletedTask;
+        }
+
+        return ExecuteAsync(async () =>
+        {
+            await Authentication.SignOutAsync();
+            currentUser = null;
+            households = [];
+            householdName = string.Empty;
+        });
+    }
 
     private Task CreateHouseholdAsync() => ExecuteAsync(async () =>
     {
-        if (identity is null)
-        {
-            throw new InvalidOperationException("Sign in before creating a household.");
-        }
-
         HouseholdSummary created = await ApiClient.CreateHouseholdAsync(
-            identity,
+            Authentication,
             householdName);
         households = [.. households, created];
         householdName = string.Empty;
@@ -157,15 +192,12 @@
 
     private async Task LoadHouseholdsCoreAsync()
     {
-        if (identity is null)
-        {
-            households = [];
-            return;
-        }
-
-        _ = await ApiClient.AuthenticateAsync(identity);
-        households = await ApiClient.ListHouseholdsAsync(identity);
+        currentUser = await ApiClient.GetCurrentUserAsync(Authentication);
+        households = await ApiClient.ListHouseholdsAsync(Authentication);
     }
+
+    private DevelopmentSession GetDevelopmentSession() =>
+        Services.GetRequiredService<DevelopmentSession>();
 
     private async Task ExecuteAsync(Func<Task> action)
     {
@@ -183,7 +215,9 @@
         }
         catch (Exception exception)
         {
-            errorMessage = exception.Message;
+            errorMessage = isDevelopmentAuthentication
+                ? exception.Message
+                : "We could not complete that secure action. Please try again.";
         }
         finally
         {

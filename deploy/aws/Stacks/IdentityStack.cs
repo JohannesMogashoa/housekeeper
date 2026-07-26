@@ -92,6 +92,11 @@ public sealed class IdentityStack : Stack
                 }
             });
 
+        HostedUiAuthority =
+            $"https://{configuration.CognitoDomainPrefix}.auth.{configuration.Region}.amazoncognito.com";
+        Issuer =
+            $"https://cognito-idp.{configuration.Region}.amazonaws.com/{UserPool.UserPoolId}";
+
         _ = new CfnOutput(
             this,
             "UserPoolId",
@@ -100,6 +105,14 @@ public sealed class IdentityStack : Stack
             this,
             "WebClientId",
             new CfnOutputProps { Value = WebClient.UserPoolClientId });
+        _ = new CfnOutput(
+            this,
+            "HostedUiAuthority",
+            new CfnOutputProps { Value = HostedUiAuthority });
+        _ = new CfnOutput(
+            this,
+            "Issuer",
+            new CfnOutputProps { Value = Issuer });
 
         Amazon.CDK.Tags.Of(this).Add("Application", "HouseKeeper");
         Amazon.CDK.Tags.Of(this).Add("Environment", configuration.EnvironmentName);
@@ -113,4 +126,8 @@ public sealed class IdentityStack : Stack
     public UserPoolDomain WebDomain { get; }
 
     public UserPoolClient WebClient { get; }
+
+    public string HostedUiAuthority { get; }
+
+    public string Issuer { get; }
 }
