@@ -60,6 +60,123 @@ public sealed class PlatformStackTests
     }
 
     [Fact]
+    public void ApplicationStackDefersServiceTasksUntilAnImmutableImageExists()
+    {
+        App app = new();
+        PlatformConfiguration configuration = Configuration();
+        NetworkStack network = new(app, "Network", StackProps(), configuration);
+        DataStack data = new(app, "Data", StackProps(), configuration, network);
+        IdentityStack identity = new(app, "Identity", StackProps(), configuration);
+        StorageStack storage = new(app, "Storage", StackProps(), configuration);
+        ApplicationStack stack = new(
+            app,
+            "Application",
+            StackProps(),
+            configuration,
+            network,
+            data,
+            storage,
+            identity);
+        Template template = Template.FromStack(stack);
+
+        template.HasResourceProperties(
+            "AWS::ECS::Service",
+            new Dictionary<string, object>
+            {
+                ["DesiredCount"] = 0
+            });
+        template.ResourceCountIs("AWS::ECS::TaskDefinition", 2);
+        template.HasResource("AWS::IAM::Role", new Dictionary<string, object>());
+    }
+
+    [Fact]
+    public void DeliveryStackRestrictsOidcTrustToRepositoryBranch()
+    {
+        App app = new();
+        PlatformConfiguration configuration = Configuration();
+        NetworkStack network = new(app, "Network", StackProps(), configuration);
+        DataStack data = new(app, "Data", StackProps(), configuration, network);
+        IdentityStack identity = new(app, "Identity", StackProps(), configuration);
+        StorageStack storage = new(app, "Storage", StackProps(), configuration);
+        ApplicationStack application = new(
+            app,
+            "Application",
+            StackProps(),
+            configuration,
+            network,
+            data,
+            storage,
+            identity);
+        DeliveryStack stack = new(
+            app,
+            "Delivery",
+            StackProps(),
+            configuration,
+            application,
+            storage);
+        Template template = Template.FromStack(stack);
+
+        template.HasResourceProperties(
+            "AWS::IAM::Role",
+            new Dictionary<string, object>
+            {
+                ["RoleName"] = "housekeeper-test-github-deploy",
+                ["AssumeRolePolicyDocument"] = new Dictionary<string, object>
+                {
+                    ["Statement"] = Match.ArrayWith(
+                        new object[]
+                        {
+                            Match.ObjectLike(
+                                new Dictionary<string, object>
+                                {
+                                    ["Condition"] = Match.ObjectLike(
+                                        new Dictionary<string, object>
+                                        {
+                                            ["StringLike"] = Match.ObjectLike(
+                                                new Dictionary<string, object>
+                                                {
+                                                    ["token.actions.githubusercontent.com:sub"] =
+                                                        "repo:JohannesMogashoa/housekeeper:ref:refs/heads/master"
+                                                })
+                                        })
+                                })
+                        })
+                }
+            });
+    }
+
+    [Fact]
+    public void ObservabilityStackCreatesBudgetAndEnvironmentResourceGroup()
+    {
+        App app = new();
+        PlatformConfiguration configuration = Configuration();
+        NetworkStack network = new(app, "Network", StackProps(), configuration);
+        DataStack data = new(app, "Data", StackProps(), configuration, network);
+        IdentityStack identity = new(app, "Identity", StackProps(), configuration);
+        StorageStack storage = new(app, "Storage", StackProps(), configuration);
+        ApplicationStack application = new(
+            app,
+            "Application",
+            StackProps(),
+            configuration,
+            network,
+            data,
+            storage,
+            identity);
+        ObservabilityStack stack = new(
+            app,
+            "Observability",
+            StackProps(),
+            configuration,
+            application,
+            data);
+        Template template = Template.FromStack(stack);
+
+        template.HasResource("AWS::Budgets::Budget", new Dictionary<string, object>());
+        template.HasResource("AWS::ResourceGroups::Group", new Dictionary<string, object>());
+    }
+
+    [Fact]
     public void IdentityStackUsesAuthorizationCodeGrantWithoutClientSecret()
     {
         App app = new();

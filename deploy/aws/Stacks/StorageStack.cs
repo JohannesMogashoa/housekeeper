@@ -3,6 +3,7 @@ using Amazon.CDK.AWS.CloudFront;
 using Amazon.CDK.AWS.CloudFront.Origins;
 using Amazon.CDK.AWS.IAM;
 using Amazon.CDK.AWS.S3;
+using Cdklabs.CdkNag;
 
 using Constructs;
 
@@ -129,6 +130,14 @@ public sealed class StorageStack : Stack
             new CfnOutputProps { Value = PwaDistribution.DistributionDomainName });
         _ = new CfnOutput(
             this,
+            "PwaDistributionId",
+            new CfnOutputProps { Value = PwaDistribution.DistributionId });
+        _ = new CfnOutput(
+            this,
+            "PwaBucketName",
+            new CfnOutputProps { Value = PwaBucket.BucketName });
+        _ = new CfnOutput(
+            this,
             "AttachmentBucketName",
             new CfnOutputProps { Value = AttachmentBucket.BucketName });
 
@@ -136,6 +145,65 @@ public sealed class StorageStack : Stack
         Amazon.CDK.Tags.Of(this).Add("Environment", configuration.EnvironmentName);
         Amazon.CDK.Tags.Of(this).Add("ManagedBy", "AWS-CDK");
         Amazon.CDK.Tags.Of(this).Add("DataClassification", "Household-private");
+
+        NagSuppressions.AddResourceSuppressions(
+            PwaBucket,
+            new[]
+            {
+                new NagPackSuppression
+                {
+                    Id = "AwsSolutions-S1",
+                    Reason = "The shared development PWA bucket is private and disposable; CloudFront and CloudWatch provide the operational access path."
+                }
+            },
+            true);
+        NagSuppressions.AddResourceSuppressions(
+            AttachmentBucket,
+            new[]
+            {
+                new NagPackSuppression
+                {
+                    Id = "AwsSolutions-S1",
+                    Reason = "The shared development attachment bucket is private and disposable; attachment lifecycle and malware telemetry are the required controls."
+                }
+            },
+            true);
+        NagSuppressions.AddResourceSuppressions(
+            MalwareProtectionRole,
+            new[]
+            {
+                new NagPackSuppression
+                {
+                    Id = "AwsSolutions-IAM5",
+                    Reason = "GuardDuty Malware Protection must inspect every object version in this exact attachment bucket."
+                }
+            },
+            true);
+        NagSuppressions.AddResourceSuppressions(
+            PwaDistribution,
+            new[]
+            {
+                new NagPackSuppression
+                {
+                    Id = "AwsSolutions-CFR3",
+                    Reason = "CloudFront standard access logging is deferred for shared development; the origin remains private through Origin Access Control."
+                },
+                new NagPackSuppression
+                {
+                    Id = "AwsSolutions-CFR4",
+                    Reason = "The distribution uses the CDK default modern TLS policy; the rule pack version predates the current CloudFront default."
+                },
+                new NagPackSuppression
+                {
+                    Id = "AwsSolutions-CFR1",
+                    Reason = "HouseKeeper is a South Africa-focused development service and does not use geo restriction."
+                },
+                new NagPackSuppression
+                {
+                    Id = "AwsSolutions-CFR2",
+                    Reason = "WAF is deferred for the disposable development distribution; the origin remains private through Origin Access Control."
+                }
+            });
     }
 
     public Bucket PwaBucket { get; }

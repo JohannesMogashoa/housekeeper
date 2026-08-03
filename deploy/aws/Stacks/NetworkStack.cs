@@ -1,5 +1,8 @@
 using Amazon.CDK;
 using Amazon.CDK.AWS.EC2;
+using Amazon.CDK.AWS.IAM;
+using Amazon.CDK.AWS.Logs;
+using Cdklabs.CdkNag;
 
 using Constructs;
 
@@ -22,7 +25,7 @@ public sealed class NetworkStack : Stack
             new VpcProps
             {
                 VpcName = $"housekeeper-{configuration.EnvironmentName}",
-                MaxAzs = 2,
+                AvailabilityZones = ["af-south-1a", "af-south-1b"],
                 NatGateways = configuration.IsProduction ? 2 : 1,
                 SubnetConfiguration =
                 [
@@ -49,6 +52,54 @@ public sealed class NetworkStack : Stack
                 EnableDnsSupport = true
             });
 
+        FlowLogRole = new Role(
+            this,
+            "FlowLogRole",
+            new RoleProps
+            {
+                AssumedBy = new ServicePrincipal("vpc-flow-logs.amazonaws.com"),
+                Description = "VPC flow log delivery role for the isolated HouseKeeper environment."
+            });
+        FlowLogGroup = new LogGroup(
+            this,
+            "FlowLogGroup",
+            new LogGroupProps
+            {
+                LogGroupName = $"/housekeeper/{configuration.EnvironmentName}/vpc-flow-logs",
+                Retention = configuration.IsProduction
+                    ? RetentionDays.ONE_YEAR
+                    : RetentionDays.ONE_MONTH,
+                RemovalPolicy = configuration.IsProduction
+                    ? RemovalPolicy.RETAIN
+                    : RemovalPolicy.DESTROY
+            });
+        FlowLogRole.AddToPolicy(
+            new PolicyStatement(
+                new PolicyStatementProps
+                {
+                    Effect = Effect.ALLOW,
+                    Actions = ["logs:CreateLogStream", "logs:DescribeLogStreams", "logs:PutLogEvents"],
+                    Resources = [FlowLogGroup.LogGroupArn, $"{FlowLogGroup.LogGroupArn}:*"]
+                }));
+        _ = Vpc.AddFlowLog(
+            "FlowLog",
+            new FlowLogOptions
+            {
+                Destination = FlowLogDestination.ToCloudWatchLogs(FlowLogGroup, FlowLogRole),
+                TrafficType = FlowLogTrafficType.ALL
+            });
+        NagSuppressions.AddResourceSuppressions(
+            FlowLogRole,
+            new[]
+            {
+                new NagPackSuppression
+                {
+                    Id = "AwsSolutions-IAM5",
+                    Reason = "VPC flow-log delivery must write to all streams within this dedicated log group."
+                }
+            },
+            true);
+
         DatabaseSecurityGroup = new SecurityGroup(
             this,
             "DatabaseSecurityGroup",
@@ -68,4 +119,8 @@ public sealed class NetworkStack : Stack
     public Vpc Vpc { get; }
 
     public SecurityGroup DatabaseSecurityGroup { get; }
+
+    public Role FlowLogRole { get; }
+
+    public LogGroup FlowLogGroup { get; }
 }

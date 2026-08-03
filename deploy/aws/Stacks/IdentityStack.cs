@@ -1,5 +1,6 @@
 using Amazon.CDK;
 using Amazon.CDK.AWS.Cognito;
+using Cdklabs.CdkNag;
 
 using Constructs;
 
@@ -117,6 +118,22 @@ public sealed class IdentityStack : Stack
         Amazon.CDK.Tags.Of(this).Add("Application", "HouseKeeper");
         Amazon.CDK.Tags.Of(this).Add("Environment", configuration.EnvironmentName);
         Amazon.CDK.Tags.Of(this).Add("ManagedBy", "AWS-CDK");
+
+        NagSuppressions.AddResourceSuppressions(
+            UserPool,
+            new[]
+            {
+                new NagPackSuppression
+                {
+                    Id = "AwsSolutions-COG2",
+                    Reason = "MFA policy is a product and onboarding decision; the shared development pool uses verified email and a strong password policy."
+                },
+                new NagPackSuppression
+                {
+                    Id = "AwsSolutions-COG8",
+                    Reason = "The shared development pool uses the default Cognito feature tier to keep the disposable environment within budget."
+                }
+            });
     }
 
     public UserPool UserPool { get; }

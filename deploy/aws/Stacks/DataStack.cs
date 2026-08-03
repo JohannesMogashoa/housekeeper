@@ -2,6 +2,7 @@ using Amazon.CDK;
 using Amazon.CDK.AWS.EC2;
 using Amazon.CDK.AWS.RDS;
 using Amazon.CDK.AWS.SSM;
+using Cdklabs.CdkNag;
 
 using Constructs;
 
@@ -43,6 +44,7 @@ public sealed class DataStack : Stack
                 MaxAllocatedStorage = 100,
                 StorageType = StorageType.GP3,
                 StorageEncrypted = true,
+                Port = 5433,
                 BackupRetention = Duration.Days(configuration.IsProduction ? 35 : 7),
                 CopyTagsToSnapshot = true,
                 DeletionProtection = configuration.IsProduction,
@@ -58,6 +60,42 @@ public sealed class DataStack : Stack
 
         DatabaseSecret = Database.Secret
             ?? throw new InvalidOperationException("RDS did not produce a credentials secret.");
+
+        NagSuppressions.AddResourceSuppressions(
+            Database,
+            new[]
+            {
+                new NagPackSuppression
+                {
+                    Id = "AwsSolutions-RDS3",
+                    Reason = "Shared development deliberately uses a single-AZ burstable instance to keep the disposable environment within budget."
+                },
+                new NagPackSuppression
+                {
+                    Id = "AwsSolutions-RDS10",
+                    Reason = "Shared development is disposable and teardown is documented; production enables deletion protection."
+                }
+            });
+        NagSuppressions.AddResourceSuppressions(
+            DatabaseSecret,
+            new[]
+            {
+                new NagPackSuppression
+                {
+                    Id = "AwsSolutions-SMG4",
+                    Reason = "The RDS-generated secret is scoped to the disposable development database; production secret rotation is a separate hardening step."
+                }
+            });
+        NagSuppressions.AddStackSuppressions(
+            this,
+            new[]
+            {
+                new NagPackSuppression
+                {
+                    Id = "AwsSolutions-SMG4",
+                    Reason = "The RDS-generated secret is scoped to the disposable development database; production secret rotation is a separate hardening step."
+                }
+            });
 
         _ = new StringParameter(
             this,
