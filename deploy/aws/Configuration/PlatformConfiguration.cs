@@ -13,7 +13,7 @@ public sealed record PlatformConfiguration
 
     public string GitHubRepository { get; init; } = DefaultGitHubRepository;
 
-    public string GitHubBranch { get; init; } = "master";
+    public string GitHubEnvironment { get; init; } = "shared-development";
 
     public string? ApiCertificateArn { get; init; }
 
@@ -51,7 +51,9 @@ public sealed record PlatformConfiguration
             Region = Get("HOUSEKEEPER_AWS_REGION", DefaultRegion),
             Account = GetOptional("HOUSEKEEPER_AWS_ACCOUNT") ?? GetOptional("CDK_DEFAULT_ACCOUNT"),
             GitHubRepository = Get("HOUSEKEEPER_GITHUB_REPOSITORY", DefaultGitHubRepository),
-            GitHubBranch = Get("HOUSEKEEPER_GITHUB_BRANCH", "master"),
+            GitHubEnvironment = Get(
+                "HOUSEKEEPER_GITHUB_ENVIRONMENT",
+                Get("HOUSEKEEPER_ENVIRONMENT", "development")),
             ApiCertificateArn = GetOptional("HOUSEKEEPER_API_CERTIFICATE_ARN"),
             ApiDomainName = GetOptional("HOUSEKEEPER_API_DOMAIN_NAME"),
             InvitationFromAddress = GetOptional("HOUSEKEEPER_INVITATION_FROM_ADDRESS"),
@@ -86,6 +88,12 @@ public sealed record PlatformConfiguration
                 "HOUSEKEEPER_GITHUB_REPOSITORY must use the owner/name form.");
         }
 
+        if (string.IsNullOrWhiteSpace(GitHubEnvironment))
+        {
+            throw new InvalidOperationException(
+                "HOUSEKEEPER_GITHUB_ENVIRONMENT must identify a protected GitHub environment.");
+        }
+
         if (CallbackUrls.Count == 0 || LogoutUrls.Count == 0)
         {
             throw new InvalidOperationException(
@@ -104,12 +112,12 @@ public sealed record PlatformConfiguration
                 "HOUSEKEEPER_AWS_ACCOUNT or CDK_DEFAULT_ACCOUNT is required for protected environments.");
         }
 
-        if (IsProduction &&
+        if (IsProtectedEnvironment &&
             (string.IsNullOrWhiteSpace(ApiCertificateArn) ||
              string.IsNullOrWhiteSpace(ApiDomainName)))
         {
             throw new InvalidOperationException(
-                "Production requires HOUSEKEEPER_API_CERTIFICATE_ARN and HOUSEKEEPER_API_DOMAIN_NAME.");
+                "Protected environments require HOUSEKEEPER_API_CERTIFICATE_ARN and HOUSEKEEPER_API_DOMAIN_NAME.");
         }
 
         if (IsProtectedEnvironment && string.IsNullOrWhiteSpace(InvitationFromAddress))

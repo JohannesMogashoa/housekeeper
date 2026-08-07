@@ -4,6 +4,8 @@ HouseKeeper is a mobile-first household management application. The repository c
 
 ## Project documentation
 
+- [Release promotion runbook](docs/development/release-promotion.md) - branch rules, workflow triggers, approvals, artifacts and recovery
+
 - [Technical recommendation](docs/architecture/technical-recommendation.md) — final stack, architecture, dependency rules, risks and deferred decisions
 - [Architecture decision index](docs/architecture/adr/README.md) — accepted ADR catalogue and implementation status
 - [Foundation backlog](docs/foundation-backlog.md) — ordered execution plan following Discovery 0
@@ -171,25 +173,63 @@ The module owns its schema and migration history. Other business modules must no
 
 ## Continuous integration
 
-The pull-request workflow:
+Development pull requests use the deliberately small
+`.github/workflows/ci.yml` path. It restores dependencies, builds the solution,
+runs the deterministic test projects, applies migrations to the temporary
+PostgreSQL service needed by the smoke environment, starts the API, and runs
+the API smoke journey. It does not publish application output, upload
+artifacts, build a container, synthesize CDK, use AWS credentials, or deploy.
 
-1. restores pinned tools and the vulnerability-audited NuGet graph;
-2. builds the complete solution with nullable analysis, recommended analyzers, and warnings as errors;
-3. runs domain, bUnit, architecture, and CDK infrastructure tests through Microsoft Testing Platform v2;
-4. collects and retains Cobertura coverage;
-5. publishes the API and PWA and rejects unresolved static-asset fingerprints;
-6. applies migrations to a clean PostgreSQL 18.4 service;
-7. starts both published applications;
-8. runs the authenticated API smoke journey;
-9. installs pinned Playwright Chromium and executes the real browser journey;
-10. restarts the published API and verifies the original household remains available;
-11. synthesizes the AWS CDK application with strict validation and builds the non-root API image;
-12. uploads restore, build, test, migration, API, web, browser, infrastructure, and coverage artifacts.
-
-The workflow does not deploy production infrastructure.
+Pull requests targeting `release/**` or `master` use
+`.github/workflows/ci-release.yml`, which calls the full reusable validation
+workflow. Pushes to `development`, `release/**`, and `master` also use the
+full workflow. That path retains coverage, application output, Playwright,
+restart/persistence checks, strict CDK synthesis and policy checks, and the
+release candidate artifact behavior required by promotion.
 
 ## AWS platform foundation
 
 The approved cloud platform is AWS in `af-south-1` (Africa/Cape Town). The PWA is hosted from private S3 behind CloudFront Origin Access Control; the API runs as a non-root ASP.NET Core container on ECS Fargate behind an ALB; PostgreSQL uses RDS; authentication uses Cognito User Pools; and delivery uses C# AWS CDK plus GitHub Actions OIDC.
 
 The CDK project is intentionally deployment-safe by default. It requires explicit environment configuration for shared or production resources, protects stateful resources, keeps migration privileges separate from runtime privileges, and never places AWS credentials or privileged secrets in the PWA.
+
+## Branch promotion and deployment
+
+HouseKeeper uses protected promotion rather than deploying ordinary development
+pushes to AWS:
+
+```text
+feature/* -> development -> rc/vX.Y.Z -> release/vX.Y.Z -> master -> vX.Y.Z
+```
+
+| Event | Result |
+|---|---|
+| PR to `development` | Lightweight build, tests, migration-backed API smoke, and an idempotent Codex description/review request; no publishing, artifacts, AWS credentials, or deployment |
+| PR to `release/**` or `master` | Full reusable validation; no AWS credentials or deployment |
+| Push to `development` | Full reusable validation only; no AWS credentials or deployment |
+| Protected `rc/vX.Y.Z` tag | Verifies ancestry from `development`, creates `release/vX.Y.Z`, and opens one promotion PR to `master` |
+| Release PR | Full validation; application-only changes skip AWS; infrastructure or migration changes require an explicitly enabled protected shared-development pre-production run |
+| Merge of `release/vX.Y.Z` into `master` | Finds the successful candidate artifact for the exact release head, deploys it to protected `production`, then creates `vX.Y.Z` and the GitHub Release |
+| Failed deployment | No final release tag is created; use the protected retry/rollback procedure in the [release promotion runbook](docs/development/release-promotion.md) |
+
+`development` is AWS-free. AWS deployment occurs only in the protected
+`shared-development` environment for an opted-in infrastructure pre-production
+run, or in the protected `production` environment after a reviewed release PR
+merges. Both environments reuse the environment-specific CDK stacks and
+serialize deployment jobs; shared-development is one deliberately reused
+environment, not a per-branch account or stack.
+
+The release candidate artifact is produced by the successful release-branch
+validation (push, or the promotion workflow's dispatch when the branch is
+created through the API). It contains the published API/PWA, API image bytes, source
+SHA, source tree SHA, release version, and image identity. Deployment verifies
+all of those values and uses the image by ECR digest. The PWA receives only
+public endpoint/client configuration at upload time; it is not rebuilt.
+
+Human controls remain required: branch rules require reviewed PRs and no force
+pushes for `development`, `release/**`, and `master`; `rc/*` and final release
+tags are protected; the shared-development and production GitHub environments
+require their configured reviewers; and material Codex findings must be
+resolved or explicitly dispositioned. The protected environment variables,
+OIDC trust, and exact setup commands are documented in the [release promotion
+runbook](docs/development/release-promotion.md) and [AWS deployment guide](deploy/aws/README.md).

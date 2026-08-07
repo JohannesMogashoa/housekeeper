@@ -317,6 +317,10 @@ public sealed class ApplicationStack : Stack
             new CfnOutputProps { Value = Cluster.ClusterName });
         _ = new CfnOutput(
             this,
+            "ApiServiceName",
+            new CfnOutputProps { Value = ApiService.Service.ServiceName });
+        _ = new CfnOutput(
+            this,
             "MigrationTaskDefinitionArn",
             new CfnOutputProps { Value = MigrationTaskDefinition.TaskDefinitionArn });
         _ = new CfnOutput(

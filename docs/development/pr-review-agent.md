@@ -37,7 +37,7 @@ After the repository is connected to Codex, comment on a pull request:
 Add a focused request when the change has a dominant risk:
 
 ```text
-@codex review for household authorization, PostgreSQL migration safety, idempotency, and API restart recovery
+@codex review for household authorization, PostgreSQL migration safety, deployment permissions, and API restart recovery
 ```
 
 Codex posts its analysis to the pull request. If it proposes a correction, keep the discussion in the review thread and either implement the change deliberately or ask Codex to prepare a patch for human review.
@@ -46,7 +46,35 @@ Request another review after material changes unless automatic review of new pus
 
 ## Automatic GitHub review
 
-Automatic review is enabled in Codex, not through GitHub Copilot files or a repository ruleset.
+The repository's `codex-review-request.yml` workflow runs on
+`pull_request_target` for every pull request targeting `development` and posts
+one idempotent Codex request. It asks Codex to review the change and generate a
+concise description in the `housekeeper-codex-description` block in the PR
+body. It has only `contents: read` and `pull-requests: write`; it never checks
+out, builds, or executes pull-request code. `pull_request_target` is safe here
+because the workflow performs only a fixed GitHub API comment operation through
+a reviewed workflow action. It must not be expanded to run tests, inspect
+files, or assume AWS credentials.
+
+The repository template is tracker-neutral: link a GitHub issue, Notion page,
+Linear task, another planning system, or no external item. If the connected
+Codex integration cannot write the PR body, it returns the generated text in
+its response and the author can paste it between the template markers.
+
+The comment is a request, not a synthetic check result. Codex review findings,
+the reusable CI checks, and human approval are separate evidence streams:
+
+- Codex reviews repository intent, changed-code risk, surrounding behavior and
+  the `AGENTS.md` contract. Authors resolve or explicitly disposition material
+  findings.
+- `ci.yml` and `validate-development-pr.yml` provide deterministic
+  development-PR build, test, migration-backed smoke evidence. `ci.yml` pushes
+  and `ci-release.yml` release/master pull requests use `validate.yml` for the
+  full CDK, browser, restart, coverage, and artifact evidence.
+- A human reviewer owns the final authorization, migration, deployment,
+  rollback, cost, and residual-risk decision.
+
+Automatic review is also enabled in Codex, not through GitHub Copilot files or a repository ruleset.
 
 1. Open Codex and connect the GitHub account or organization that owns `JohannesMogashoa/housekeeper`.
 2. Ensure the ChatGPT GitHub connector is authorized for the repository.
@@ -87,8 +115,8 @@ Questions and non-blocking suggestions remain separate from defects. Codex shoul
 
 Before requesting review:
 
-1. Link the canonical HK GitHub issue and Notion task in the PR.
-2. Complete the pull-request template instead of deleting sections without explanation.
+1. Link the relevant GitHub issue, Notion page, Linear task, another tracker item, or explain why there is none.
+2. Complete the concise pull-request template; leave conditional sections as `N/A` when they do not apply.
 3. Run the risk-appropriate tests and link the exact CI run.
 4. Include migration, rollout, compatibility, and rollback notes for data changes.
 5. Include screenshots or recordings for visible PWA changes.

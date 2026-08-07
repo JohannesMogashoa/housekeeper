@@ -1,0 +1,137 @@
+name: Release pre-production gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_branch:
+        description: Protected release branch, for example release/v1.2.3.
+        required: true
+        type: string
+      source_sha:
+        description: Exact release branch head to validate and, when enabled, deploy.
+        required: true
+        type: string
+      enable_preproduction:
+        description: Explicitly opt in to the protected shared-development deployment.
+        required: true
+        default: false
+        type: boolean
+      candidate_run_id:
+        description: Optional successful release-branch validation run; resolved automatically when omitted.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+concurrency:
+  group: housekeeper-release-preproduction-${{ inputs.release_branch }}
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    name: Classify release changes and enforce the pre-production gate
+    permissions:
+      contents: read
+      actions: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      should_deploy: ${{ steps.gate.outputs.should_deploy }}
+      release_version: ${{ steps.gate.outputs.release_version }}
+      candidate_run_id: ${{ steps.gate.outputs.candidate_run_id }}
+      source_sha: ${{ steps.gate.outputs.source_sha }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_BRANCH: ${{ inputs.release_branch }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      ENABLE_PREPRODUCTION: ${{ inputs.enable_preproduction }}
+      REQUESTED_CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+      REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Check release branch and candidate commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${RELEASE_BRANCH}" =~ ^release/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Unsupported release branch: ${RELEASE_BRANCH}" >&2
+            exit 1
+          fi
+          branch_sha="$(gh api "repos/${REPOSITORY}/git/ref/heads/${RELEASE_BRANCH}" --jq '.object.sha')"
+          test "${branch_sha}" = "${SOURCE_SHA}" || {
+            echo "${RELEASE_BRANCH} is at ${branch_sha}, not the requested ${SOURCE_SHA}." >&2
+            exit 1
+          }
+
+      - name: Fetch base and candidate trees for change classification
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+
+      - name: Classify infrastructure-impacting changes and resolve candidate run
+        id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin master
+          release_version="${RELEASE_BRANCH#release/}"
+          changed_files="$(git diff --name-only origin/master...${SOURCE_SHA})"
+          infra_changed=false
+          if grep -E --quiet '^(deploy/aws/|deploy/containers/|src/.*/Migrations/|\.github/workflows/|scripts/smoke-aws\.sh$|Directory\.Packages\.props$|global\.json$)' <<<"${changed_files}"; then
+            infra_changed=true
+          fi
+
+          if [[ "${infra_changed}" == true && "${ENABLE_PREPRODUCTION}" != true ]]; then
+            echo 'Infrastructure or migration changes require an explicit protected shared-development pre-production run.' >&2
+            echo 'Re-run this workflow with enable_preproduction=true after reviewing the candidate.' >&2
+            exit 1
+          fi
+
+          candidate_run_id="${REQUESTED_CANDIDATE_RUN_ID}"
+          if [[ -z "${candidate_run_id}" ]]; then
+            candidate_run_id="$(gh run list \
+              --repo "${REPOSITORY}" \
+              --workflow ci.yml \
+              --branch "${RELEASE_BRANCH}" \
+              --limit 100 \
+              --json databaseId,headSha,event,status,conclusion | \
+              jq -r --arg sha "${SOURCE_SHA}" '[.[] | select((.event == "push" or .event == "workflow_dispatch") and .headSha == $sha and .status == "completed" and .conclusion == "success")] | .[0].databaseId // empty')"
+          fi
+          test -n "${candidate_run_id}" || {
+            echo "No successful release-branch validation produced a candidate for ${SOURCE_SHA}." >&2
+            exit 1
+          }
+
+          should_deploy=false
+          if [[ "${infra_changed}" == true && "${ENABLE_PREPRODUCTION}" == true ]]; then
+            should_deploy=true
+          fi
+
+          if [[ "${infra_changed}" == false ]]; then
+            echo 'Application-only release: AWS deployment is intentionally skipped.'
+          fi
+          {
+            echo "should_deploy=${should_deploy}"
+            echo "release_version=${release_version}"
+            echo "candidate_run_id=${candidate_run_id}"
+            echo "source_sha=${SOURCE_SHA}"
+          } >> "${GITHUB_OUTPUT}"
+
+  deploy:
+    name: Deploy opted-in candidate to shared development
+    needs: inspect
+    if: ${{ needs.inspect.outputs.should_deploy == 'true' }}
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    uses: ./.github/workflows/deploy-environment.yml
+    with:
+      environment: shared-development
+      source_sha: ${{ needs.inspect.outputs.source_sha }}
+      candidate_run_id: ${{ needs.inspect.outputs.candidate_run_id }}
+      release_version: ${{ needs.inspect.outputs.release_version }}
+    secrets: inherit

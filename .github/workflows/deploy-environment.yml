@@ -1,0 +1,357 @@
+name: Deploy a protected HouseKeeper environment
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: Protected GitHub environment and CDK environment name.
+        required: true
+        type: string
+      source_sha:
+        description: Exact release candidate commit to promote.
+        required: true
+        type: string
+      candidate_run_id:
+        description: Successful release-branch validation run that produced the candidate artifact.
+        required: true
+        type: string
+      release_version:
+        description: Version represented by the release branch.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+concurrency:
+  group: housekeeper-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy exact candidate to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: ${{ inputs.environment }}
+    env:
+      HOUSEKEEPER_ENVIRONMENT: ${{ inputs.environment }}
+      HOUSEKEEPER_GITHUB_ENVIRONMENT: ${{ inputs.environment }}
+      HOUSEKEEPER_AWS_REGION: af-south-1
+      HOUSEKEEPER_AWS_ACCOUNT: ${{ vars.HOUSEKEEPER_AWS_ACCOUNT }}
+      HOUSEKEEPER_GITHUB_REPOSITORY: ${{ github.repository }}
+      HOUSEKEEPER_API_CERTIFICATE_ARN: ${{ vars.HOUSEKEEPER_API_CERTIFICATE_ARN }}
+      HOUSEKEEPER_API_DOMAIN_NAME: ${{ vars.HOUSEKEEPER_API_DOMAIN_NAME }}
+      HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN: ${{ vars.HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN }}
+      HOUSEKEEPER_API_DESIRED_COUNT: "0"
+      EXPECTED_SOURCE_SHA: ${{ inputs.source_sha }}
+      EXPECTED_RELEASE_VERSION: ${{ inputs.release_version }}
+      CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+      SMOKE_HOUSEHOLD_NAME: HouseKeeper ${{ inputs.environment }} smoke ${{ github.run_id }}
+
+    steps:
+      - name: Check out exact candidate source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 1
+
+      - name: Download exact candidate artifact
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.candidate_run_id }}
+          name: housekeeper-candidate-${{ inputs.source_sha }}
+          path: artifacts/candidate
+
+      - name: Verify candidate run provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${CANDIDATE_RUN_ID}")"
+          test "$(jq -r '.path' <<<"${run_json}")" = ".github/workflows/ci.yml"
+          run_event="$(jq -r '.event' <<<"${run_json}")"
+          test "${run_event}" = "push" || test "${run_event}" = "workflow_dispatch"
+          test "$(jq -r '.conclusion' <<<"${run_json}")" = "success"
+          test "$(jq -r '.head_sha' <<<"${run_json}")" = "${EXPECTED_SOURCE_SHA}"
+          test "$(jq -r '.head_branch' <<<"${run_json}")" = "release/${EXPECTED_RELEASE_VERSION}"
+
+      - name: Verify candidate source, tree, and image identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          metadata=artifacts/candidate/metadata.json
+          test -s "${metadata}"
+          test "$(jq -r '.artifact_format_version' "${metadata}")" = "1"
+          test "$(jq -r '.workflow' "${metadata}")" = "validate"
+          test "$(jq -r '.source_sha' "${metadata}")" = "${EXPECTED_SOURCE_SHA}"
+          test "$(jq -r '.source_ref' "${metadata}")" = "refs/heads/release/${EXPECTED_RELEASE_VERSION}"
+          test "$(jq -r '.release_version' "${metadata}")" = "${EXPECTED_RELEASE_VERSION}"
+          test "$(jq -r '.tree_sha' "${metadata}")" = "$(git rev-parse HEAD^{tree})"
+          test -f artifacts/candidate/api-image.tar
+          test -f artifacts/candidate/web/wwwroot/index.html
+
+          docker load --input artifacts/candidate/api-image.tar
+          expected_image_id="$(jq -r '.api_image_id' "${metadata}")"
+          actual_image_id="$(docker image inspect housekeeper-api:ci --format '{{.Id}}')"
+          test "${actual_image_id}" = "${expected_image_id}"
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.300
+          cache: true
+          cache-dependency-path: Directory.Packages.props
+
+      - name: Install Node.js and AWS CDK Toolkit
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install pinned AWS CDK Toolkit
+        run: npm install --global aws-cdk@2.1132.1
+
+      - name: Restore and build infrastructure
+        run: |
+          dotnet restore deploy/aws/HouseKeeper.Infrastructure.csproj
+          dotnet build deploy/aws/HouseKeeper.Infrastructure.csproj --configuration Release --no-restore
+
+      - name: Configure AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.HOUSEKEEPER_AWS_REGION }}
+          role-to-assume: ${{ vars.HOUSEKEEPER_AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: housekeeper-${{ inputs.environment }}-${{ github.run_id }}
+
+      - name: Synthesize and record infrastructure diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/deployment
+          cd deploy/aws
+          cdk synth --strict 2>&1 | tee ../../artifacts/deployment/cdk-synth.log
+          set +e
+          cdk diff --context environment="${HOUSEKEEPER_ENVIRONMENT}" 2>&1 | tee ../../artifacts/deployment/cdk-diff.log
+          diff_status=${PIPESTATUS[0]}
+          set -e
+          if [[ "${diff_status}" -gt 1 ]]; then
+            exit "${diff_status}"
+          fi
+
+      - name: Verify protected deployment policy reports
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$(find deploy/aws/cdk.out -name 'AwsSolutions-*-NagReport.csv' -print -quit)"
+          if grep -R --fixed-strings --quiet 'Non-Compliant' deploy/aws/cdk.out; then
+            echo 'CDK Nag reported an unsuppressed non-compliant finding.' >&2
+            exit 1
+          fi
+
+      - name: Provision protected environment before registering the candidate
+        working-directory: deploy/aws
+        run: |
+          : "${HOUSEKEEPER_API_CERTIFICATE_ARN:?Configure HOUSEKEEPER_API_CERTIFICATE_ARN in the protected environment}"
+          : "${HOUSEKEEPER_API_DOMAIN_NAME:?Configure HOUSEKEEPER_API_DOMAIN_NAME in the protected environment}"
+          : "${HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN:?Configure HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN in the protected environment}"
+          cdk deploy --all --require-approval never --role-arn "${HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN}"
+
+      - name: Push candidate API image and record ECR digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          output() {
+            aws cloudformation describe-stacks \
+              --stack-name "$1" \
+              --query "Stacks[0].Outputs[?OutputKey=='$2'].OutputValue | [0]" \
+              --output text
+          }
+          repository_uri="$(output HouseKeeperApplication ApiRepositoryUri)"
+          repository_name="${repository_uri#*/}"
+          aws ecr get-login-password | docker login --username AWS --password-stdin "${repository_uri%%/*}"
+          docker tag housekeeper-api:ci "${repository_uri}:${EXPECTED_SOURCE_SHA}"
+          docker push "${repository_uri}:${EXPECTED_SOURCE_SHA}"
+          image_digest="$(aws ecr describe-images \
+            --repository-name "${repository_name}" \
+            --image-ids imageTag="${EXPECTED_SOURCE_SHA}" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)"
+          test "${image_digest}" != "None"
+          echo "HOUSEKEEPER_API_IMAGE_URI=${repository_uri}@${image_digest}" >> "${GITHUB_ENV}"
+          echo "HOUSEKEEPER_API_IMAGE_DIGEST=${image_digest}" >> "${GITHUB_ENV}"
+
+      - name: Resolve environment endpoints and Cognito callbacks
+        shell: bash
+        run: |
+          set -euo pipefail
+          output() {
+            aws cloudformation describe-stacks \
+              --stack-name "$1" \
+              --query "Stacks[0].Outputs[?OutputKey=='$2'].OutputValue | [0]" \
+              --output text
+          }
+          pwa_domain="$(output HouseKeeperStorage PwaDistributionDomain)"
+          api_host="${HOUSEKEEPER_API_DOMAIN_NAME}"
+          api_scheme="https"
+          echo "HOUSEKEEPER_PWA_URL=https://${pwa_domain}" >> "${GITHUB_ENV}"
+          echo "HOUSEKEEPER_API_URL=${api_scheme}://${api_host}" >> "${GITHUB_ENV}"
+          echo "HOUSEKEEPER_COGNITO_CALLBACK_URLS=https://${pwa_domain}/authentication/login-callback" >> "${GITHUB_ENV}"
+          echo "HOUSEKEEPER_COGNITO_LOGOUT_URLS=https://${pwa_domain}/authentication/logout-callback" >> "${GITHUB_ENV}"
+
+      - name: Register exact image and environment callback configuration
+        working-directory: deploy/aws
+        run: cdk deploy --all --require-approval never --role-arn "${HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN}"
+
+      - name: Apply reviewed migrations through the isolated ECS task
+        shell: bash
+        run: |
+          set -euo pipefail
+          output() {
+            aws cloudformation describe-stacks \
+              --stack-name "$1" \
+              --query "Stacks[0].Outputs[?OutputKey=='$2'].OutputValue | [0]" \
+              --output text
+          }
+          cluster_name="$(output HouseKeeperApplication ApiClusterName)"
+          task_definition="$(output HouseKeeperApplication MigrationTaskDefinitionArn)"
+          migration_security_group="$(output HouseKeeperApplication MigrationSecurityGroupId)"
+          private_subnets="$(output HouseKeeperApplication PrivateSubnetIds)"
+          task_arn="$(aws ecs run-task \
+            --cluster "${cluster_name}" \
+            --task-definition "${task_definition}" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[${private_subnets}],securityGroups=[${migration_security_group}],assignPublicIp=DISABLED}" \
+            --query 'tasks[0].taskArn' \
+            --output text)"
+          test "${task_arn}" != "None"
+          aws ecs wait tasks-stopped --cluster "${cluster_name}" --tasks "${task_arn}"
+          exit_code="$(aws ecs describe-tasks \
+            --cluster "${cluster_name}" \
+            --tasks "${task_arn}" \
+            --query 'tasks[0].containers[0].exitCode' \
+            --output text)"
+          test "${exit_code}" = "0"
+
+      - name: Start API service after migrations
+        working-directory: deploy/aws
+        run: HOUSEKEEPER_API_DESIRED_COUNT=1 cdk deploy --all --require-approval never --role-arn "${HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN}"
+
+      - name: Verify readiness after deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in {1..40}; do
+            if curl --fail --silent --show-error "${HOUSEKEEPER_API_URL}/health/ready" >/dev/null; then
+              exit 0
+            fi
+            sleep 15
+          done
+          exit 1
+
+      - name: Publish the candidate PWA with public environment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          output() {
+            aws cloudformation describe-stacks \
+              --stack-name "$1" \
+              --query "Stacks[0].Outputs[?OutputKey=='$2'].OutputValue | [0]" \
+              --output text
+          }
+          issuer="$(output HouseKeeperIdentity Issuer)"
+          client_id="$(output HouseKeeperIdentity WebClientId)"
+          bucket="$(output HouseKeeperStorage PwaBucketName)"
+          distribution_id="$(output HouseKeeperStorage PwaDistributionId)"
+          pwa_root="artifacts/candidate/web/wwwroot"
+          jq \
+            --arg api "${HOUSEKEEPER_API_URL}/" \
+            --arg issuer "${issuer}" \
+            --arg client_id "${client_id}" \
+            --arg redirect "${HOUSEKEEPER_PWA_URL}/authentication/login-callback" \
+            --arg logout "${HOUSEKEEPER_PWA_URL}/authentication/logout-callback" \
+            '.ApiBaseUrl = $api |
+             .Authentication.Mode = "Cognito" |
+             .Authentication.Cognito.Authority = $issuer |
+             .Authentication.Cognito.ClientId = $client_id |
+             .Authentication.Cognito.RedirectUri = $redirect |
+             .Authentication.Cognito.PostLogoutRedirectUri = $logout' \
+            "${pwa_root}/appsettings.json" > "${RUNNER_TEMP}/appsettings.json"
+          cp "${RUNNER_TEMP}/appsettings.json" "${pwa_root}/appsettings.json"
+          aws s3 sync "${pwa_root}" "s3://${bucket}" --delete
+          aws cloudfront create-invalidation --distribution-id "${distribution_id}" --paths '/*' >/dev/null
+
+      - name: Run authenticated smoke and persistence checks
+        shell: bash
+        env:
+          SMOKE_ACCESS_TOKEN: ${{ secrets.HOUSEKEEPER_SMOKE_ACCESS_TOKEN }}
+        run: |
+          API_BASE_URL="${HOUSEKEEPER_API_URL}" bash scripts/smoke-aws.sh
+
+      - name: Install Playwright Chromium for deployed browser check
+        run: |
+          dotnet restore tests/HouseKeeper.EndToEndTests/HouseKeeper.EndToEndTests.csproj
+          dotnet build tests/HouseKeeper.EndToEndTests/HouseKeeper.EndToEndTests.csproj --configuration Release --no-restore
+          pwsh tests/HouseKeeper.EndToEndTests/bin/Release/net10.0/playwright.ps1 install --with-deps chromium
+
+      - name: Run deployed browser availability check
+        shell: bash
+        run: |
+          HOUSEKEEPER_WEB_BASE_URL="${HOUSEKEEPER_PWA_URL}" \
+          dotnet test tests/HouseKeeper.EndToEndTests/HouseKeeper.EndToEndTests.csproj \
+            --configuration Release \
+            --no-build \
+            --filter FullyQualifiedName~DeploymentAvailabilityTests
+
+      - name: Restart service and repeat recovery smoke
+        shell: bash
+        env:
+          SMOKE_ACCESS_TOKEN: ${{ secrets.HOUSEKEEPER_SMOKE_ACCESS_TOKEN }}
+          SMOKE_EXPECT_EXISTING: "true"
+        run: |
+          set -euo pipefail
+          output() {
+            aws cloudformation describe-stacks \
+              --stack-name HouseKeeperApplication \
+              --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue | [0]" \
+              --output text
+          }
+          cluster_name="$(output ApiClusterName)"
+          service_name="$(output ApiServiceName)"
+          aws ecs update-service --cluster "${cluster_name}" --service "${service_name}" --force-new-deployment >/dev/null
+          aws ecs wait services-stable --cluster "${cluster_name}" --services "${service_name}"
+          for attempt in {1..40}; do
+            if curl --fail --silent --show-error "${HOUSEKEEPER_API_URL}/health/ready" >/dev/null; then
+              API_BASE_URL="${HOUSEKEEPER_API_URL}" bash scripts/smoke-aws.sh
+              exit 0
+            fi
+            sleep 15
+          done
+          exit 1
+
+      - name: Write deployment evidence
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p artifacts/deployment
+          jq -n \
+            --arg environment "${HOUSEKEEPER_ENVIRONMENT}" \
+            --arg source_sha "${EXPECTED_SOURCE_SHA}" \
+            --arg release_version "${EXPECTED_RELEASE_VERSION}" \
+            --arg image_digest "${HOUSEKEEPER_API_IMAGE_DIGEST:-not-recorded}" \
+            '{environment: $environment, source_sha: $source_sha, release_version: $release_version, api_image_digest: $image_digest}' \
+            > artifacts/deployment/deployment-evidence.json
+        continue-on-error: true
+
+      - name: Upload deployment evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: housekeeper-deployment-${{ inputs.environment }}-${{ github.run_id }}
+          path: artifacts/deployment
+          if-no-files-found: warn
+          retention-days: 30

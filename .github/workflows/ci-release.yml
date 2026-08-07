@@ -1,0 +1,19 @@
+name: Release and master pull-request validation
+
+on:
+  pull_request:
+    branches:
+      - release/**
+      - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: housekeeper-release-validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  full-validation:
+    name: Full pull-request validation
+    uses: ./.github/workflows/validate.yml
