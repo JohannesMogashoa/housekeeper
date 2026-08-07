@@ -1,0 +1,294 @@
+name: Reusable HouseKeeper validation
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Build, test, migrate, and smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    services:
+      postgres:
+        image: postgres:18.4
+        env:
+          POSTGRES_DB: housekeeper
+          POSTGRES_USER: housekeeper
+          POSTGRES_PASSWORD: housekeeper_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U housekeeper -d housekeeper"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      ConnectionStrings__HouseKeeper: Host=127.0.0.1;Port=5432;Database=housekeeper;Username=housekeeper;Password=housekeeper_ci;Include Error Detail=true
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+      SMOKE_HOUSEHOLD_NAME: HK-14 Smoke Household ${{ github.run_id }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Verify repository checkout is clean
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain --untracked-files=all)"
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.300
+          cache: true
+          cache-dependency-path: Directory.Packages.props
+
+      - name: Restore local tools
+        run: dotnet tool restore
+
+      - name: Restore dependencies
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          dotnet restore HouseKeeper.slnx \
+            2>&1 | tee artifacts/restore.log
+
+      - name: Build
+        shell: bash
+        run: |
+          mkdir -p artifacts/test-results
+          set -o pipefail
+          dotnet build HouseKeeper.slnx \
+            --configuration Release \
+            --no-restore \
+            2>&1 | tee artifacts/build.log
+
+      - name: Install Node.js for AWS CDK
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install AWS CDK Toolkit
+        run: npm install --global aws-cdk@2.1132.1
+
+      - name: Synthesize AWS infrastructure with strict validation
+        shell: bash
+        run: |
+          set -o pipefail
+          cd deploy/aws
+          cdk synth --strict 2>&1 | tee ../../artifacts/cdk-synth.log
+
+      - name: Verify AWS policy reports
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/cdk-nag
+          find deploy/aws/cdk.out -name 'AwsSolutions-*-NagReport.csv' -exec cp {} artifacts/cdk-nag/ \;
+          test -n "$(find artifacts/cdk-nag -name '*.csv' -print -quit)"
+          if grep -R --fixed-strings --quiet 'Non-Compliant' artifacts/cdk-nag; then
+            echo 'CDK Nag reported an unsuppressed non-compliant finding.' >&2
+            exit 1
+          fi
+
+      - name: Build non-root API container
+        run: docker build --file deploy/containers/HouseKeeper.Api.Dockerfile --tag housekeeper-api:ci .
+
+      - name: Run fast tests and collect coverage
+        shell: bash
+        run: |
+          set -o pipefail
+
+          dotnet test tests/Modules/HouseKeeper.Modules.Households.Tests/HouseKeeper.Modules.Households.Tests.csproj \
+            --configuration Release \
+            --no-build \
+            --results-directory artifacts/test-results \
+            -- \
+            --coverage \
+            --coverage-output "${GITHUB_WORKSPACE}/artifacts/test-results/households.cobertura.xml" \
+            --coverage-output-format cobertura \
+            2>&1 | tee artifacts/households-tests.log
+
+          dotnet test tests/HouseKeeper.Web.Tests/HouseKeeper.Web.Tests.csproj \
+            --configuration Release \
+            --no-build \
+            --results-directory artifacts/test-results \
+            2>&1 | tee artifacts/web-tests.log
+
+          dotnet test tests/HouseKeeper.ArchitectureTests/HouseKeeper.ArchitectureTests.csproj \
+            --configuration Release \
+            --no-build \
+            --results-directory artifacts/test-results \
+            2>&1 | tee artifacts/architecture-tests.log
+
+          dotnet test deploy/aws/tests/HouseKeeper.Infrastructure.Tests/HouseKeeper.Infrastructure.Tests.csproj \
+            --configuration Release \
+            --no-build \
+            --results-directory artifacts/test-results \
+            2>&1 | tee artifacts/infrastructure-tests.log
+
+          test -s artifacts/test-results/households.cobertura.xml
+
+      - name: Publish API
+        run: >-
+          dotnet publish src/HouseKeeper.Api/HouseKeeper.Api.csproj
+          --configuration Release
+          --no-build
+          --output artifacts/api
+
+      - name: Publish web application
+        shell: bash
+        run: |
+          dotnet publish src/HouseKeeper.Web/HouseKeeper.Web.csproj \
+            --configuration Release \
+            --no-restore \
+            --output artifacts/web
+
+          if grep --fixed-strings --quiet '#[.{fingerprint}]' artifacts/web/wwwroot/index.html; then
+            echo 'Published index.html contains unresolved static-asset fingerprints.' >&2
+            exit 1
+          fi
+
+      - name: Apply database migrations
+        shell: bash
+        run: |
+          set -o pipefail
+          dotnet ef database update \
+            --project src/Modules/HouseKeeper.Modules.Households \
+            --startup-project src/HouseKeeper.Api \
+            --context HouseholdsDbContext \
+            --configuration Release \
+            --no-build \
+            2>&1 | tee artifacts/migration.log
+
+      - name: Start published applications
+        shell: bash
+        run: |
+          ASPNETCORE_ENVIRONMENT=Development \
+          dotnet artifacts/api/HouseKeeper.Api.dll \
+            --urls http://127.0.0.1:5287 \
+            > artifacts/api.log 2>&1 &
+          echo $! > artifacts/api.pid
+
+          python3 -m http.server 5136 \
+            --bind 127.0.0.1 \
+            --directory artifacts/web/wwwroot \
+            > artifacts/web.log 2>&1 &
+          echo $! > artifacts/web.pid
+
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:5287/health/ready >/dev/null \
+              && curl --fail --silent http://localhost:5136 >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+
+          cat artifacts/api.log
+          cat artifacts/web.log
+          exit 1
+
+      - name: Run API smoke journey
+        run: bash scripts/smoke.sh
+
+      - name: Install Playwright Chromium
+        run: >-
+          pwsh tests/HouseKeeper.EndToEndTests/bin/Release/net10.0/playwright.ps1
+          install --with-deps chromium
+
+      - name: Run browser journey
+        shell: bash
+        env:
+          HOUSEKEEPER_WEB_BASE_URL: http://localhost:5136
+        run: |
+          set -o pipefail
+          dotnet test tests/HouseKeeper.EndToEndTests/HouseKeeper.EndToEndTests.csproj \
+            --configuration Release \
+            --no-build \
+            --results-directory artifacts/test-results \
+            2>&1 | tee artifacts/end-to-end-tests.log
+
+      - name: Restart API and prove persistence
+        shell: bash
+        run: |
+          kill "$(cat artifacts/api.pid)"
+
+          for attempt in {1..15}; do
+            if ! kill -0 "$(cat artifacts/api.pid)" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          ASPNETCORE_ENVIRONMENT=Development \
+          dotnet artifacts/api/HouseKeeper.Api.dll \
+            --urls http://127.0.0.1:5287 \
+            > artifacts/api-restart.log 2>&1 &
+          echo $! > artifacts/api.pid
+
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:5287/health/ready >/dev/null; then
+              bash scripts/assert-persistence.sh
+              exit 0
+            fi
+            sleep 1
+          done
+
+          cat artifacts/api-restart.log
+          exit 1
+
+      - name: Prepare release candidate artifact
+        if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/release/') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_branch="${GITHUB_REF_NAME}"
+          if [[ ! "${release_branch}" =~ ^release/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release candidate branch is not a supported semver branch: ${release_branch}" >&2
+            exit 1
+          fi
+
+          mkdir -p artifacts/candidate
+          cp -R artifacts/api artifacts/candidate/api
+          cp -R artifacts/web artifacts/candidate/web
+          docker save housekeeper-api:ci --output artifacts/candidate/api-image.tar
+          image_id="$(docker image inspect housekeeper-api:ci --format '{{.Id}}')"
+          source_sha="$(git rev-parse HEAD)"
+          tree_sha="$(git rev-parse HEAD^{tree})"
+          release_version="${release_branch#release/}"
+
+          jq -n \
+            --arg source_sha "${source_sha}" \
+            --arg tree_sha "${tree_sha}" \
+            --arg source_ref "refs/heads/${release_branch}" \
+            --arg release_version "${release_version}" \
+            --arg image_id "${image_id}" \
+            '{artifact_format_version: 1, workflow: "validate", source_sha: $source_sha, tree_sha: $tree_sha, source_ref: $source_ref, release_version: $release_version, api_image_id: $image_id}' \
+            > artifacts/candidate/metadata.json
+
+      - name: Upload release candidate artifact
+        if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/heads/release/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: housekeeper-candidate-${{ github.sha }}
+          path: artifacts/candidate
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: housekeeper-validation-${{ github.run_id }}
+          path: |
+            artifacts
+            !artifacts/candidate
+          if-no-files-found: warn
+          retention-days: 14

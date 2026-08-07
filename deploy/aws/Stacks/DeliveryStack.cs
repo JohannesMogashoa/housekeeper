@@ -42,12 +42,10 @@ public sealed class DeliveryStack : Stack
                     {
                         ["StringEquals"] = new Dictionary<string, object>
                         {
-                            ["token.actions.githubusercontent.com:aud"] = "sts.amazonaws.com"
-                        },
-                        ["StringLike"] = new Dictionary<string, object>
-                        {
+                            ["token.actions.githubusercontent.com:aud"] = "sts.amazonaws.com",
+                            ["token.actions.githubusercontent.com:repository"] = configuration.GitHubRepository,
                             ["token.actions.githubusercontent.com:sub"] =
-                                $"repo:{configuration.GitHubRepository}:ref:refs/heads/{configuration.GitHubBranch}"
+                                $"repo:{configuration.GitHubRepository}:environment:{configuration.GitHubEnvironment}"
                         }
                     })
             });
@@ -274,7 +272,7 @@ public sealed class DeliveryStack : Stack
                 new NagPackSuppression
                 {
                     Id = "AwsSolutions-IAM5",
-                    Reason = "The OIDC deployment role needs wildcard CloudFormation create/read scope and API token discovery; data-plane permissions are scoped to this environment's resources."
+                    Reason = "The OIDC deployment role is trusted only by this repository's protected GitHub environment; CloudFormation discovery is broad while data-plane permissions remain environment-scoped."
                 }
             },
             true);

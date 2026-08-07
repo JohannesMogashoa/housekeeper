@@ -3,6 +3,10 @@
 - HK issue: <!-- Example: Closes #4 -->
 - Notion task: <!-- Paste the canonical HK page URL -->
 - Dependencies completed: <!-- List prerequisite issues/PRs or explain why none -->
+- Target branch and release phase: <!-- development, release/vX.Y.Z, or master; feature/RC/release/production phase -->
+- Infrastructure impact: <!-- None, application, container, CDK, migration, workflow, or deployment script -->
+- Pre-production decision: <!-- Required and run ID, or skipped because this is application-only -->
+- Candidate artifact/version: <!-- release version, source SHA, candidate artifact name, and validation run ID when applicable -->
 
 ## Outcome
 
@@ -70,6 +74,9 @@ Commands or workflow runs:
 Paste exact commands and GitHub Actions run links here.
 ```
 
+- [ ] Exact validation workflow run(s) are linked above.
+- [ ] Documentation was updated for changed workflow, deployment, migration, rollback, cost, or operational behavior.
+
 ### Manual
 
 <!-- Device/browser/environment, scenario, result, and residual gaps. -->
@@ -81,6 +88,7 @@ Paste exact commands and GitHub Actions run links here.
 - Backup/restore/retention:
 - AWS cost/resource impact:
 - Deployment and rollback evidence:
+- Residual cost, rollback, and operational risks:
 
 ## Known risks and deferred work
 

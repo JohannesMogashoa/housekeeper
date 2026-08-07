@@ -1,0 +1,105 @@
+name: Promote release candidate
+
+on:
+  push:
+    tags:
+      - rc/v*.*.*
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: housekeeper-release-promotion-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Create release branch and promotion PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RC_TAG: ${{ github.ref_name }}
+      REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Check out protected tag history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag and development ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${RC_TAG}" =~ ^rc/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Unsupported release-candidate tag: ${RC_TAG}" >&2
+            exit 1
+          fi
+
+          git fetch --no-tags origin development
+          tag_sha="$(git rev-list -n 1 "refs/tags/${RC_TAG}")"
+          if ! git merge-base --is-ancestor "${tag_sha}" origin/development; then
+            echo "${RC_TAG} is not reachable from development; refusing promotion." >&2
+            exit 1
+          fi
+          echo "Verified ${RC_TAG} at ${tag_sha} is reachable from development."
+
+      - name: Create or verify release branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${RC_TAG#rc/}"
+          release_branch="release/${version}"
+          tag_sha="$(git rev-list -n 1 "refs/tags/${RC_TAG}")"
+
+          existing_sha="$(gh api "repos/${REPOSITORY}/git/ref/heads/${release_branch}" --jq '.object.sha' 2>/dev/null || true)"
+          if [[ -n "${existing_sha}" ]]; then
+            test "${existing_sha}" = "${tag_sha}" || {
+              echo "${release_branch} already points at ${existing_sha}, not ${tag_sha}." >&2
+              exit 1
+            }
+          else
+            gh api --method POST "repos/${REPOSITORY}/git/refs" \
+              -f "ref=refs/heads/${release_branch}" \
+              -f "sha=${tag_sha}"
+          fi
+
+      - name: Create one promotion pull request
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${RC_TAG#rc/}"
+          release_branch="release/${version}"
+          pr_number="$(gh pr list --repo "${REPOSITORY}" --base master --head "${release_branch}" --state open --json number --jq '.[0].number // empty')"
+          if [[ -z "${pr_number}" ]]; then
+            gh pr create \
+              --repo "${REPOSITORY}" \
+              --base master \
+              --head "${release_branch}" \
+              --title "Promote ${version} to master" \
+              --body "## Release promotion\n\nThis PR was created from protected tag \`${RC_TAG}\`.\n\n- Release branch: \`${release_branch}\`\n- Validate the release head and exact candidate artifact before merge.\n- Run the protected shared-development pre-production workflow when infrastructure or migration changes are present.\n- Merge only after Codex findings are dispositioned and a human approves."
+          else
+            echo "Promotion PR #${pr_number} already exists."
+          fi
+
+      - name: Start release-branch validation when no push event exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${RC_TAG#rc/}"
+          release_branch="release/${version}"
+          tag_sha="$(git rev-list -n 1 "refs/tags/${RC_TAG}")"
+          successful_run="$(gh run list \
+            --repo "${REPOSITORY}" \
+            --workflow ci.yml \
+            --branch "${release_branch}" \
+            --limit 100 \
+            --json databaseId,headSha,event,status,conclusion | \
+            jq -r --arg sha "${tag_sha}" '[.[] | select((.event == "push" or .event == "workflow_dispatch") and .headSha == $sha and .status == "completed" and .conclusion == "success")] | .[0].databaseId // empty')"
+          if [[ -z "${successful_run}" ]]; then
+            gh workflow run ci.yml --repo "${REPOSITORY}" --ref "${release_branch}"
+          else
+            echo "Release head already has successful validation run ${successful_run}."
+          fi

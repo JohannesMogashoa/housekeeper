@@ -1,0 +1,123 @@
+name: Reusable development pull-request validation
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Build, test, and API smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:18.4
+        env:
+          POSTGRES_DB: housekeeper
+          POSTGRES_USER: housekeeper
+          POSTGRES_PASSWORD: housekeeper_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U housekeeper -d housekeeper"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      ConnectionStrings__HouseKeeper: Host=127.0.0.1;Port=5432;Database=housekeeper;Username=housekeeper;Password=housekeeper_ci;Include Error Detail=true
+      ASPNETCORE_ENVIRONMENT: Development
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+      SMOKE_HOUSEHOLD_NAME: HK-14 Smoke Household ${{ github.run_id }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Verify repository checkout is clean
+        shell: bash
+        run: test -z "$(git status --porcelain --untracked-files=all)"
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.300
+          cache: true
+          cache-dependency-path: Directory.Packages.props
+
+      - name: Restore local tools
+        run: dotnet tool restore
+
+      - name: Restore dependencies
+        run: dotnet restore HouseKeeper.slnx
+
+      - name: Build
+        run: dotnet build HouseKeeper.slnx --configuration Release --no-restore
+
+      - name: Run tests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          dotnet test tests/Modules/HouseKeeper.Modules.Households.Tests/HouseKeeper.Modules.Households.Tests.csproj \
+            --configuration Release \
+            --no-build
+
+          dotnet test tests/HouseKeeper.Web.Tests/HouseKeeper.Web.Tests.csproj \
+            --configuration Release \
+            --no-build
+
+          dotnet test tests/HouseKeeper.ArchitectureTests/HouseKeeper.ArchitectureTests.csproj \
+            --configuration Release \
+            --no-build
+
+          dotnet test deploy/aws/tests/HouseKeeper.Infrastructure.Tests/HouseKeeper.Infrastructure.Tests.csproj \
+            --configuration Release \
+            --no-build
+
+      - name: Prepare database for API smoke
+        run: >-
+          dotnet ef database update
+          --project src/Modules/HouseKeeper.Modules.Households
+          --startup-project src/HouseKeeper.Api
+          --context HouseholdsDbContext
+          --configuration Release
+          --no-build
+
+      - name: Start API for smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet run \
+            --project src/HouseKeeper.Api/HouseKeeper.Api.csproj \
+            --configuration Release \
+            --no-build \
+            --no-restore \
+            -- --urls http://127.0.0.1:5287 \
+            > api.log 2>&1 &
+          echo $! > api.pid
+
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:5287/health/ready >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+
+          cat api.log
+          exit 1
+
+      - name: Run API smoke journey
+        run: bash scripts/smoke.sh
+
+      - name: Stop API
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f api.pid ]]; then
+            kill "$(cat api.pid)" 2>/dev/null || true
+          fi
