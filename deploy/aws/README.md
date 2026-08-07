@@ -19,15 +19,18 @@ the [GitHub project and deployment setup guide](../../docs/development/github-pr
 - `IdentityStack`: Cognito User Pool, authorization-code PKCE web client, and
   API scopes. Household membership and roles remain application-owned.
 - `StorageStack`: private PWA and attachment buckets, CloudFront Origin Access
-  Control, and GuardDuty Malware Protection for S3.
+  Control, and optional GuardDuty Malware Protection for S3.
 - `ApplicationStack`: immutable scan-on-push ECR, non-public ECS Fargate API
   tasks, ALB readiness checks, ECS Exec, separate runtime/migration roles, and
   deployment circuit-breaker rollback.
-- `DeliveryStack`: the GitHub OIDC provider, an environment-scoped deployment
-  role, a CloudFormation execution role, and resource-scoped artifact/task
-  permissions.
+- `GitHubOidcStack`: one account-level GitHub OIDC provider shared by both
+  environments.
+- `DeliveryStack`: an environment-scoped deployment role, a CloudFormation
+  execution role, and resource-scoped artifact/task permissions.
 - `ObservabilityStack`: CloudWatch logs and alarms, an X-Ray group, and a
-  monthly cost budget.
+  resource group.
+- `BudgetStack`: the account-level monthly cost budget deployed in `us-east-1`,
+  where the AWS Budgets CloudFormation resource is available.
 
 ## Local synthesis and review
 
@@ -48,9 +51,9 @@ without AWS credentials. Development pull requests use the smaller build,
 test, and smoke workflow and do not set up CDK, publish artifacts, or contact
 AWS. Protected apply workflows also record a `cdk diff` artifact; an
 environment reviewer must inspect it before approval. Both protected
-environments require an account, ACM certificate ARN, API domain, and explicit
-Cognito callback and logout URLs. Stateful production resources retain state
-and enable deletion protection.
+environments require an account, API and PWA ACM certificate ARNs, API and PWA
+domains, and explicit Cognito callback and logout URLs. Stateful production
+resources retain state and enable deletion protection.
 
 ## Protected environments and variables
 
@@ -66,7 +69,9 @@ supplies these variables:
 | `HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN` | CloudFormation execution role passed by CDK |
 | `HOUSEKEEPER_API_CERTIFICATE_ARN` | ACM certificate for the API HTTPS listener; required in production |
 | `HOUSEKEEPER_API_DOMAIN_NAME` | DNS name routed to the API ALB; required in production |
-| `HOUSEKEEPER_INVITATION_FROM_ADDRESS` | Verified SES sender used for household invitations |
+| `HOUSEKEEPER_PWA_CERTIFICATE_ARN` | `us-east-1` ACM certificate for the CloudFront alias |
+| `HOUSEKEEPER_PWA_DOMAIN_NAME` | DNS name routed to the CloudFront distribution |
+| `HOUSEKEEPER_ENABLE_GUARDDUTY` | `true` only after account-level GuardDuty activation; leave unset/false for shared development |
 
 Add `HOUSEKEEPER_SMOKE_ACCESS_TOKEN` as a protected environment secret. It is
 used in memory for authenticated smoke and persistence checks and is never
@@ -81,6 +86,11 @@ HOUSEKEEPER_AWS_REGION=af-south-1
 HOUSEKEEPER_GITHUB_REPOSITORY=JohannesMogashoa/housekeeper
 HOUSEKEEPER_API_IMAGE_URI=<ECR repository URI>@<immutable digest>
 HOUSEKEEPER_API_DESIRED_COUNT=0 or 1
+HOUSEKEEPER_API_CERTIFICATE_ARN=<af-south-1 ACM certificate ARN>
+HOUSEKEEPER_API_DOMAIN_NAME=<environment API hostname>
+HOUSEKEEPER_PWA_CERTIFICATE_ARN=<us-east-1 ACM certificate ARN>
+HOUSEKEEPER_PWA_DOMAIN_NAME=<environment PWA hostname>
+HOUSEKEEPER_ENABLE_GUARDDUTY=false for shared-development; true for production
 HOUSEKEEPER_COGNITO_CALLBACK_URLS=<semicolon-separated public callback URLs>
 HOUSEKEEPER_COGNITO_LOGOUT_URLS=<semicolon-separated public logout URLs>
 ~~~
@@ -190,9 +200,13 @@ private files, or household data in those artifacts.
 Shared-development is intentionally small and reused: one RDS instance, one
 VPC, one ECS service, one ECR repository, one CloudFront distribution, and the
 modeled storage/observability resources. Release branches do not create cloud
-resources. Production uses deletion protection, retained state, Multi-AZ RDS,
-longer backups, and a separate OIDC role. Review cost changes and the monthly
-budget before enabling a new resource.
+resources. Shared-development uses zero-day automated RDS backup retention
+because this account's free-tier plan rejects longer retention; its database is
+disposable and its final snapshot policy remains explicit. Production uses
+deletion protection, retained state, Multi-AZ RDS, 35-day backups, and a
+separate OIDC role. Review cost changes and the monthly budget before enabling
+a new resource. The budget stack is account-level but environment-named, so it
+is included when a disposable environment is torn down.
 
 Shared-development teardown is disposable but requires a reviewed diff:
 
@@ -201,7 +215,18 @@ $env:HOUSEKEEPER_ENVIRONMENT = "shared-development"
 $env:HOUSEKEEPER_GITHUB_ENVIRONMENT = "shared-development"
 $env:HOUSEKEEPER_AWS_REGION = "af-south-1"
 cd deploy/aws
-cdk destroy --all --force
+cdk destroy \
+  HouseKeeper-shared-development-Network \
+  HouseKeeper-shared-development-Data \
+  HouseKeeper-shared-development-Identity \
+  HouseKeeper-shared-development-Storage \
+  HouseKeeper-shared-development-Application \
+  HouseKeeper-shared-development-Delivery \
+  HouseKeeper-shared-development-Observability \
+  HouseKeeper-shared-development-Budget \
+  --force
 ~~~
 
-Never destroy production state as a retry mechanism.
+The account-level `HouseKeeper-GitHubOidc` stack is intentionally excluded so
+production deployments can continue to use the same provider. Never destroy
+production state as a retry mechanism.

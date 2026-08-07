@@ -1,4 +1,5 @@
 using Amazon.CDK;
+using Amazon.CDK.AWS.CertificateManager;
 using Amazon.CDK.AWS.CloudFront;
 using Amazon.CDK.AWS.CloudFront.Origins;
 using Amazon.CDK.AWS.IAM;
@@ -34,68 +35,97 @@ public sealed class StorageStack : Stack
             versioned: true,
             enableCors: true);
 
-        MalwareProtectionRole = new Role(
-            this,
-            "MalwareProtectionRole",
-            new RoleProps
-            {
-                AssumedBy = new ServicePrincipal("malware-protection-plan.guardduty.amazonaws.com"),
-                Description = "GuardDuty Malware Protection for S3 access to HouseKeeper attachment objects."
-            });
+        MalwareProtectionRole = null;
+        GuardDutyDetector = null;
+        MalwareProtectionPlan = null;
 
-        MalwareProtectionRole.AddToPolicy(
-            new PolicyStatement(
-                new PolicyStatementProps
+        if (configuration.EnableGuardDuty)
+        {
+            Role malwareProtectionRole = new(
+                this,
+                "MalwareProtectionRole",
+                new RoleProps
                 {
-                    Effect = Effect.ALLOW,
-                    Actions =
-                    [
-                        "s3:GetBucketLocation",
-                        "s3:ListBucket",
-                        "s3:GetObject",
-                        "s3:GetObjectVersion",
-                        "s3:PutObject",
-                        "s3:PutObjectAcl"
-                    ],
-                    Resources =
-                    [
-                        AttachmentBucket.BucketArn,
-                        AttachmentBucket.ArnForObjects("*")
-                    ]
-                }));
+                    AssumedBy = new ServicePrincipal("malware-protection-plan.guardduty.amazonaws.com"),
+                    Description = "GuardDuty Malware Protection for S3 access to HouseKeeper attachment objects."
+                });
 
-        MalwareProtectionPlan = new CfnResource(
-            this,
-            "MalwareProtectionPlan",
-            new CfnResourceProps
-            {
-                Type = "AWS::GuardDuty::MalwareProtectionPlan",
-                Properties = new Dictionary<string, object>
+            malwareProtectionRole.AddToPolicy(
+                new PolicyStatement(
+                    new PolicyStatementProps
+                    {
+                        Effect = Effect.ALLOW,
+                        Actions =
+                        [
+                            "s3:GetBucketLocation",
+                            "s3:ListBucket",
+                            "s3:GetObject",
+                            "s3:GetObjectVersion",
+                            "s3:PutObject",
+                            "s3:PutObjectAcl"
+                        ],
+                        Resources =
+                        [
+                            AttachmentBucket.BucketArn,
+                            AttachmentBucket.ArnForObjects("*")
+                        ]
+                    }));
+
+            MalwareProtectionRole = malwareProtectionRole;
+            GuardDutyDetector = new CfnResource(
+                this,
+                "GuardDutyDetector",
+                new CfnResourceProps
                 {
-                    ["Role"] = MalwareProtectionRole.RoleArn,
-                    ["ProtectedResource"] = new Dictionary<string, object>
+                    Type = "AWS::GuardDuty::Detector",
+                    Properties = new Dictionary<string, object>
                     {
-                        ["S3Bucket"] = new Dictionary<string, object>
-                        {
-                            ["BucketName"] = AttachmentBucket.BucketName
-                        }
-                    },
-                    ["Actions"] = new Dictionary<string, object>
+                        ["Enable"] = true
+                    }
+                });
+
+            MalwareProtectionPlan = new CfnResource(
+                this,
+                "MalwareProtectionPlan",
+                new CfnResourceProps
+                {
+                    Type = "AWS::GuardDuty::MalwareProtectionPlan",
+                    Properties = new Dictionary<string, object>
                     {
-                        ["Tagging"] = new Dictionary<string, object>
+                        ["Role"] = malwareProtectionRole.RoleArn,
+                        ["ProtectedResource"] = new Dictionary<string, object>
                         {
-                            ["Status"] = "ENABLED"
+                            ["S3Bucket"] = new Dictionary<string, object>
+                            {
+                                ["BucketName"] = AttachmentBucket.BucketName
+                            }
+                        },
+                        ["Actions"] = new Dictionary<string, object>
+                        {
+                            ["Tagging"] = new Dictionary<string, object>
+                            {
+                                ["Status"] = "ENABLED"
+                            }
                         }
                     }
-                }
-            });
+                });
+            MalwareProtectionPlan.Node.AddDependency(GuardDutyDetector);
+        }
+
+        ICertificate? pwaCertificate = configuration.PwaCertificateArn is null
+            ? null
+            : Certificate.FromCertificateArn(this, "PwaCertificate", configuration.PwaCertificateArn);
 
         PwaDistribution = new Distribution(
             this,
             "PwaDistribution",
             new DistributionProps
             {
+                Certificate = pwaCertificate,
                 DefaultRootObject = "index.html",
+                DomainNames = configuration.PwaDomainName is null
+                    ? null
+                    : [configuration.PwaDomainName],
                 DefaultBehavior = new BehaviorOptions
                 {
                     Origin = S3BucketOrigin.WithOriginAccessControl(PwaBucket),
@@ -168,17 +198,20 @@ public sealed class StorageStack : Stack
                 }
             },
             true);
-        NagSuppressions.AddResourceSuppressions(
-            MalwareProtectionRole,
-            new[]
-            {
-                new NagPackSuppression
+        if (MalwareProtectionRole is not null)
+        {
+            NagSuppressions.AddResourceSuppressions(
+                MalwareProtectionRole,
+                new[]
                 {
-                    Id = "AwsSolutions-IAM5",
-                    Reason = "GuardDuty Malware Protection must inspect every object version in this exact attachment bucket."
-                }
-            },
-            true);
+                    new NagPackSuppression
+                    {
+                        Id = "AwsSolutions-IAM5",
+                        Reason = "GuardDuty Malware Protection must inspect every object version in this exact attachment bucket."
+                    }
+                },
+                true);
+        }
         NagSuppressions.AddResourceSuppressions(
             PwaDistribution,
             new[]
@@ -210,9 +243,11 @@ public sealed class StorageStack : Stack
 
     public Bucket AttachmentBucket { get; }
 
-    public Role MalwareProtectionRole { get; }
+    public Role? MalwareProtectionRole { get; }
 
-    public CfnResource MalwareProtectionPlan { get; }
+    public CfnResource? GuardDutyDetector { get; }
+
+    public CfnResource? MalwareProtectionPlan { get; }
 
     public Distribution PwaDistribution { get; }
 

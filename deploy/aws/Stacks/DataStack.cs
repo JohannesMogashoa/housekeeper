@@ -45,7 +45,7 @@ public sealed class DataStack : Stack
                 StorageType = StorageType.GP3,
                 StorageEncrypted = true,
                 Port = 5433,
-                BackupRetention = Duration.Days(configuration.IsProduction ? 35 : 7),
+                BackupRetention = Duration.Days(configuration.IsProduction ? 35 : 0),
                 CopyTagsToSnapshot = true,
                 DeletionProtection = configuration.IsProduction,
                 DeleteAutomatedBackups = !configuration.IsProduction,
@@ -61,21 +61,30 @@ public sealed class DataStack : Stack
         DatabaseSecret = Database.Secret
             ?? throw new InvalidOperationException("RDS did not produce a credentials secret.");
 
-        NagSuppressions.AddResourceSuppressions(
-            Database,
-            new[]
+        List<NagPackSuppression> databaseSuppressions =
+        [
+            new NagPackSuppression
             {
+                Id = "AwsSolutions-RDS3",
+                Reason = "Shared development deliberately uses a single-AZ burstable instance to keep the disposable environment within budget."
+            },
+            new NagPackSuppression
+            {
+                Id = "AwsSolutions-RDS10",
+                Reason = "Shared development is disposable and teardown is documented; production enables deletion protection."
+            }
+        ];
+        if (!configuration.IsProduction)
+        {
+            databaseSuppressions.Add(
                 new NagPackSuppression
                 {
-                    Id = "AwsSolutions-RDS3",
-                    Reason = "Shared development deliberately uses a single-AZ burstable instance to keep the disposable environment within budget."
-                },
-                new NagPackSuppression
-                {
-                    Id = "AwsSolutions-RDS10",
-                    Reason = "Shared development is disposable and teardown is documented; production enables deletion protection."
-                }
-            });
+                    Id = "AwsSolutions-RDS13",
+                    Reason = "The shared-development account is on an AWS free-tier plan that rejects automated backup retention; production retains automated backups."
+                });
+        }
+
+        NagSuppressions.AddResourceSuppressions(Database, databaseSuppressions.ToArray());
         NagSuppressions.AddResourceSuppressions(
             DatabaseSecret,
             new[]

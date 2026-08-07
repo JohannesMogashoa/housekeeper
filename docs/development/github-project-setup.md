@@ -268,10 +268,11 @@ production values separate.
 
 ## 8. Choose the AWS account and region
 
-Use a separate AWS account for shared-development and production where
-possible. The CDK currently creates fixed CloudFormation stack names such as
-`HouseKeeperApplication` and `HouseKeeperData`; using both environments in the
-same account and region can make them collide.
+The confirmed cost-saving layout uses account `713554442303` for both
+environments. The CDK gives environment stacks distinct names such as
+`HouseKeeper-shared-development-Application` and
+`HouseKeeper-production-Application`, while the GitHub OIDC provider is shared
+once per account.
 
 The supported region is:
 
@@ -293,81 +294,55 @@ aws sts get-caller-identity `
   --output text
 ```
 
-Record the returned account ID as `HOUSEKEEPER_AWS_ACCOUNT`. Repeat the
-process with a different profile and account for production.
+Record the returned account ID as `HOUSEKEEPER_AWS_ACCOUNT` in both GitHub
+environments.
 
 Do not save AWS access keys in GitHub. GitHub Actions obtains short-lived AWS
 credentials through OIDC.
 
-## 9. Create the AWS sender identity
+## 9. Request and validate the regional certificates
 
-Household invitations use Amazon SES when the protected environment is
-configured for SES delivery.
-
-Choose a verified sender, for example:
-
-```powershell
-$fromAddress = "invitations@example.com"
-```
-
-Create an SES email identity:
-
-```powershell
-aws sesv2 create-email-identity `
-  --email-identity $fromAddress `
-  --profile $awsProfile `
-  --region $awsRegion
-```
-
-Click the verification email, then check the result:
-
-```powershell
-aws sesv2 get-email-identity `
-  --email-identity $fromAddress `
-  --profile $awsProfile `
-  --region $awsRegion `
-  --query VerifiedForSendingStatus `
-  --output text
-```
-
-The result must be `True`. For a domain identity, publish the DKIM records
-provided by SES.
-
-Save the sender as the GitHub environment variable:
+SES is not currently wired into the application or CDK deployment, so do not
+create an SES identity yet. The confirmed hostnames are:
 
 ```text
-HOUSEKEEPER_INVITATION_FROM_ADDRESS
+housekeeper-api-dev.yngstln.dev
+housekeeper-api.yngstln.dev
+housekeeper-dev.yngstln.dev
+housekeeper.yngstln.dev
 ```
 
-Do this independently in each AWS account if the environments are separate.
-
-## 10. Request and validate the API certificate
-
-Choose the public API hostname for the environment:
-
-```powershell
-$apiDomain = "api-shared.example.com"
-```
-
-Request a DNS-validated ACM certificate in `af-south-1`:
+Request a DNS-validated wildcard certificate in `af-south-1` for the API load
+balancers:
 
 ```powershell
 aws acm request-certificate `
-  --domain-name $apiDomain `
+  --domain-name "*.yngstln.dev" `
   --validation-method DNS `
   --profile $awsProfile `
   --region $awsRegion
 ```
 
-Add the ACM validation CNAME record to DNS and wait for the certificate to
-reach `ISSUED`:
+Request a second wildcard certificate in `us-east-1` for CloudFront:
+
+```powershell
+aws acm request-certificate `
+  --domain-name "*.yngstln.dev" `
+  --validation-method DNS `
+  --profile $awsProfile `
+  --region us-east-1
+```
+
+The two requests currently return the same ACM validation CNAME. Add that
+record once to Cloudflare DNS and wait for both certificates to reach
+`ISSUED`.
 
 ```powershell
 aws acm list-certificates `
   --profile $awsProfile `
   --region $awsRegion `
   --certificate-statuses ISSUED `
-  --query "CertificateSummaryList[?DomainName=='$apiDomain'].CertificateArn | [0]" `
+  --query "CertificateSummaryList[?DomainName=='*.yngstln.dev'].CertificateArn | [0]" `
   --output text
 ```
 
@@ -375,20 +350,28 @@ Save the returned ARN in a local variable and as the GitHub environment
 variable:
 
 ```powershell
-$certificateArn = aws acm list-certificates `
+$apiCertificateArn = aws acm list-certificates `
   --profile $awsProfile `
   --region $awsRegion `
   --certificate-statuses ISSUED `
-  --query "CertificateSummaryList[?DomainName=='$apiDomain'].CertificateArn | [0]" `
+  --query "CertificateSummaryList[?DomainName=='*.yngstln.dev'].CertificateArn | [0]" `
+  --output text
+
+$pwaCertificateArn = aws acm list-certificates `
+  --profile $awsProfile `
+  --region us-east-1 `
+  --certificate-statuses ISSUED `
+  --query "CertificateSummaryList[?DomainName=='*.yngstln.dev'].CertificateArn | [0]" `
   --output text
 ```
 
 ```text
 HOUSEKEEPER_API_CERTIFICATE_ARN
+HOUSEKEEPER_PWA_CERTIFICATE_ARN
 ```
 
-The certificate must be in the same account and region as the API load
-balancer.
+The API certificate must be in `af-south-1`. The PWA certificate must be in
+`us-east-1`, because CloudFront requires ACM certificates there.
 
 ## 11. Bootstrap CDK and create the OIDC roles
 
@@ -402,8 +385,9 @@ $env:HOUSEKEEPER_AWS_REGION = "af-south-1"
 $env:HOUSEKEEPER_AWS_ACCOUNT = "123456789012"
 $env:HOUSEKEEPER_GITHUB_REPOSITORY = "JohannesMogashoa/housekeeper"
 $env:HOUSEKEEPER_API_CERTIFICATE_ARN = "arn:aws:acm:af-south-1:123456789012:certificate/..."
-$env:HOUSEKEEPER_API_DOMAIN_NAME = "api-shared.example.com"
-$env:HOUSEKEEPER_INVITATION_FROM_ADDRESS = "invitations@example.com"
+$env:HOUSEKEEPER_API_DOMAIN_NAME = "housekeeper-api-dev.yngstln.dev"
+$env:HOUSEKEEPER_PWA_CERTIFICATE_ARN = "arn:aws:acm:us-east-1:123456789012:certificate/..."
+$env:HOUSEKEEPER_PWA_DOMAIN_NAME = "housekeeper-dev.yngstln.dev"
 ```
 
 Bootstrap the account:
@@ -430,18 +414,18 @@ This creates the environment-scoped GitHub OIDC deployment role and the
 CloudFormation execution role. Later GitHub Actions deployments must use OIDC
 instead of the administrator profile.
 
-Retrieve the role ARNs from `HouseKeeperDelivery`:
+Retrieve the role ARNs from `HouseKeeper-shared-development-Delivery`:
 
 ```powershell
 $deployRoleArn = aws cloudformation describe-stacks `
-  --stack-name HouseKeeperDelivery `
+  --stack-name HouseKeeper-shared-development-Delivery `
   --profile $awsProfile `
   --region $awsRegion `
   --query "Stacks[0].Outputs[?OutputKey=='GitHubDeploymentRoleArn'].OutputValue | [0]" `
   --output text
 
 $cfnRoleArn = aws cloudformation describe-stacks `
-  --stack-name HouseKeeperDelivery `
+  --stack-name HouseKeeper-shared-development-Delivery `
   --profile $awsProfile `
   --region $awsRegion `
   --query "Stacks[0].Outputs[?OutputKey=='CloudFormationExecutionRoleArn'].OutputValue | [0]" `
@@ -472,7 +456,7 @@ After the Application stack exists, retrieve the load balancer hostname:
 
 ```powershell
 $loadBalancerDns = aws cloudformation describe-stacks `
-  --stack-name HouseKeeperApplication `
+  --stack-name HouseKeeper-shared-development-Application `
   --profile $awsProfile `
   --region $awsRegion `
   --query "Stacks[0].Outputs[?OutputKey=='ApiLoadBalancerDnsName'].OutputValue | [0]" `
@@ -484,12 +468,29 @@ $loadBalancerDns
 Create the DNS record in your DNS provider:
 
 ```text
-api-shared.example.com  CNAME  <load-balancer-dns-name>
+housekeeper-api-dev.yngstln.dev  CNAME  <load-balancer-dns-name>
 ```
 
-Use the production API hostname and production load balancer for the
-production account. The current CDK creates the load balancer but does not
-create this DNS record.
+Retrieve the PWA CloudFront hostname:
+
+```powershell
+$pwaDistributionDns = aws cloudformation describe-stacks `
+  --stack-name HouseKeeper-shared-development-Storage `
+  --profile $awsProfile `
+  --region $awsRegion `
+  --query "Stacks[0].Outputs[?OutputKey=='PwaDistributionDomain'].OutputValue | [0]" `
+  --output text
+```
+
+Create the PWA DNS record:
+
+```text
+housekeeper-dev.yngstln.dev  CNAME  <cloudfront-distribution-hostname>
+```
+
+Repeat with the production hostnames and stack names when production is
+configured. Keep the Cloudflare records DNS-only while validating the AWS
+certificates and origins.
 
 ## 13. Create the Cognito smoke-test identity
 
@@ -501,21 +502,21 @@ Retrieve the Cognito outputs:
 
 ```powershell
 $userPoolId = aws cloudformation describe-stacks `
-  --stack-name HouseKeeperIdentity `
+  --stack-name HouseKeeper-shared-development-Identity `
   --profile $awsProfile `
   --region $awsRegion `
   --query "Stacks[0].Outputs[?OutputKey=='UserPoolId'].OutputValue | [0]" `
   --output text
 
 $clientId = aws cloudformation describe-stacks `
-  --stack-name HouseKeeperIdentity `
+  --stack-name HouseKeeper-shared-development-Identity `
   --profile $awsProfile `
   --region $awsRegion `
   --query "Stacks[0].Outputs[?OutputKey=='WebClientId'].OutputValue | [0]" `
   --output text
 
 $authority = aws cloudformation describe-stacks `
-  --stack-name HouseKeeperIdentity `
+  --stack-name HouseKeeper-shared-development-Identity `
   --profile $awsProfile `
   --region $awsRegion `
   --query "Stacks[0].Outputs[?OutputKey=='HostedUiAuthority'].OutputValue | [0]" `
@@ -568,11 +569,13 @@ Save the following values independently under both GitHub environments:
 | Name | Value source | Secret? |
 |---|---|---|
 | `HOUSEKEEPER_AWS_ACCOUNT` | `aws sts get-caller-identity` | No |
-| `HOUSEKEEPER_AWS_DEPLOY_ROLE_ARN` | `HouseKeeperDelivery` output `GitHubDeploymentRoleArn` | No |
-| `HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN` | `HouseKeeperDelivery` output `CloudFormationExecutionRoleArn` | No |
+| `HOUSEKEEPER_AWS_DEPLOY_ROLE_ARN` | Environment Delivery stack output `GitHubDeploymentRoleArn` | No |
+| `HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN` | Environment Delivery stack output `CloudFormationExecutionRoleArn` | No |
 | `HOUSEKEEPER_API_CERTIFICATE_ARN` | Issued ACM certificate ARN | No |
-| `HOUSEKEEPER_API_DOMAIN_NAME` | Chosen API DNS name | No |
-| `HOUSEKEEPER_INVITATION_FROM_ADDRESS` | Verified SES sender | No |
+| `HOUSEKEEPER_API_DOMAIN_NAME` | Environment API DNS name | No |
+| `HOUSEKEEPER_PWA_CERTIFICATE_ARN` | Issued `us-east-1` ACM certificate ARN | No |
+| `HOUSEKEEPER_PWA_DOMAIN_NAME` | Environment PWA DNS name | No |
+| `HOUSEKEEPER_ENABLE_GUARDDUTY` | `false` for shared-development; `true` for production after account activation | No |
 
 The following values are generated or supplied by the workflows and should
 not normally be entered manually as GitHub environment values:
@@ -589,7 +592,25 @@ not normally be entered manually as GitHub environment values:
 | `HOUSEKEEPER_COGNITO_LOGOUT_URLS` | Deployment workflow after resolving the PWA domain |
 
 The CDK creates the database secret in AWS Secrets Manager. Do not copy the
-database username or password into GitHub.
+database username or password into GitHub. SES remains deferred until the
+invitation capability is implemented.
+
+GuardDuty Malware Protection for S3 is optional in shared development because
+the account is not currently subscribed to GuardDuty. Leave
+`HOUSEKEEPER_ENABLE_GUARDDUTY` unset or set it to `false` there. Production
+validation rejects a disabled value; activate GuardDuty at the AWS account
+level first, then set the production environment variable to `true`. Until a
+scanner is active, attachment uploads must remain unavailable or quarantined
+and must not become downloadable or linkable as ready content.
+
+Shared-development RDS uses zero-day automated backup retention because the
+current AWS account's free-tier plan rejects longer retention. Production
+keeps 35-day automated backups, deletion protection, retained state, and
+Multi-AZ placement.
+
+The account-level monthly budget is deployed by a dedicated Budget stack in
+`us-east-1`, because AWS Budgets CloudFormation resources are unavailable in
+`af-south-1`.
 
 ### Value to save as an environment secret
 
@@ -615,20 +636,25 @@ gh variable set HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN `
   --env shared-development --repo $repo --body $cfnRoleArn
 
 gh variable set HOUSEKEEPER_API_CERTIFICATE_ARN `
-  --env shared-development --repo $repo --body $certificateArn
+  --env shared-development --repo $repo --body $apiCertificateArn
 
 gh variable set HOUSEKEEPER_API_DOMAIN_NAME `
-  --env shared-development --repo $repo --body $apiDomain
+  --env shared-development --repo $repo --body "housekeeper-api-dev.yngstln.dev"
 
-gh variable set HOUSEKEEPER_INVITATION_FROM_ADDRESS `
-  --env shared-development --repo $repo --body $fromAddress
+gh variable set HOUSEKEEPER_PWA_CERTIFICATE_ARN `
+  --env shared-development --repo $repo --body $pwaCertificateArn
+
+gh variable set HOUSEKEEPER_PWA_DOMAIN_NAME `
+  --env shared-development --repo $repo --body "housekeeper-dev.yngstln.dev"
 
 gh secret set HOUSEKEEPER_SMOKE_ACCESS_TOKEN `
   --env shared-development --repo $repo --body $accessToken
 ```
 
-Repeat the commands with `--env production` and the production account,
-roles, certificate, domain, sender, and access token. Do not echo the token.
+Repeat the commands with `--env production`, the production role ARNs, the
+production API/PWA domains, and the production smoke token. The account ID
+and wildcard certificate ARNs may be reused because both environments share
+the confirmed AWS account. Do not echo the token.
 
 The same values can be entered in the GitHub web interface under each
 environment's **Variables** and **Secrets** sections. GitHub does not allow a
@@ -654,9 +680,9 @@ Before a protected deployment, confirm:
 - the required reviewer is configured;
 - the AWS account ID matches the intended environment;
 - the deployment role trust contains the exact repository and environment;
-- the ACM certificate is `ISSUED` in `af-south-1`;
-- the SES sender is verified;
-- the API DNS record resolves to the intended load balancer;
+- the API ACM certificate is `ISSUED` in `af-south-1`;
+- the PWA ACM certificate is `ISSUED` in `us-east-1`;
+- both API and PWA DNS records resolve to the intended AWS targets;
 - the smoke secret is a current Cognito access token;
 - the release candidate run ID and source SHA refer to the same successful artifact.
 
@@ -683,12 +709,6 @@ OIDC flow with static AWS keys.
 Check that the certificate is issued in `af-south-1`, belongs to the target AWS
 account, covers the exact API hostname, and that DNS resolves to the current
 load balancer.
-
-### SES invitation delivery fails
-
-Check that `HOUSEKEEPER_INVITATION_FROM_ADDRESS` is passed to the deployment
-workflow, the sender is verified in the target account and region, and the
-application is configured for SES delivery.
 
 ### Smoke returns `401 Unauthorized`
 

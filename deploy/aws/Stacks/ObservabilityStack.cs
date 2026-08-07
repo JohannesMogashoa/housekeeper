@@ -1,7 +1,6 @@
 using Amazon.CDK;
 using Amazon.CDK.AWS.CloudWatch;
 using Amazon.CDK.AWS.Logs;
-using Cdklabs.CdkNag;
 
 using Constructs;
 
@@ -75,24 +74,6 @@ public sealed class ObservabilityStack : Stack
                 }
             });
 
-        MonthlyBudget = new Amazon.CDK.AWS.Budgets.CfnBudget(
-            this,
-            "MonthlyBudget",
-            new Amazon.CDK.AWS.Budgets.CfnBudgetProps
-            {
-                Budget = new Amazon.CDK.AWS.Budgets.CfnBudget.BudgetDataProperty
-                {
-                    BudgetName = $"housekeeper-{configuration.EnvironmentName}-monthly",
-                    BudgetType = "COST",
-                    TimeUnit = "MONTHLY",
-                    BudgetLimit = new Amazon.CDK.AWS.Budgets.CfnBudget.SpendProperty
-                    {
-                        Amount = configuration.IsProduction ? 250 : 75,
-                        Unit = "USD"
-                    }
-                }
-            });
-
         ResourceGroup = new CfnResource(
             this,
             "ResourceGroup",
@@ -126,23 +107,6 @@ public sealed class ObservabilityStack : Stack
                     }
                 }
             });
-        NagSuppressions.AddResourceSuppressions(
-            MonthlyBudget,
-            new[]
-            {
-                new NagPackSuppression
-                {
-                    Id = "CloudFormation-Validate::F3006",
-                    Reason = "AWS Budgets is a global service and CloudFormation's regional resource validator does not list it for af-south-1."
-                }
-            });
-        Validations.Of(MonthlyBudget).Acknowledge(
-            new Acknowledgment
-            {
-                Id = "CloudFormation-Validate::F3006",
-                Reason = "AWS Budgets is a global service and CloudFormation's regional resource validator does not list it for af-south-1."
-            });
-
         Amazon.CDK.Tags.Of(this).Add("Application", "HouseKeeper");
         Amazon.CDK.Tags.Of(this).Add("Environment", configuration.EnvironmentName);
         Amazon.CDK.Tags.Of(this).Add("ManagedBy", "AWS-CDK");
@@ -155,8 +119,6 @@ public sealed class ObservabilityStack : Stack
     public Alarm DatabaseCpuAlarm { get; }
 
     public CfnResource XRayGroup { get; }
-
-    public Amazon.CDK.AWS.Budgets.CfnBudget MonthlyBudget { get; }
 
     public CfnResource ResourceGroup { get; }
 }

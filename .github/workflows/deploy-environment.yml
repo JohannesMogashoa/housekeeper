@@ -41,9 +41,12 @@ jobs:
       HOUSEKEEPER_AWS_REGION: af-south-1
       HOUSEKEEPER_AWS_ACCOUNT: ${{ vars.HOUSEKEEPER_AWS_ACCOUNT }}
       HOUSEKEEPER_GITHUB_REPOSITORY: ${{ github.repository }}
+      HOUSEKEEPER_STACK_PREFIX: HouseKeeper-${{ inputs.environment }}-
       HOUSEKEEPER_API_CERTIFICATE_ARN: ${{ vars.HOUSEKEEPER_API_CERTIFICATE_ARN }}
       HOUSEKEEPER_API_DOMAIN_NAME: ${{ vars.HOUSEKEEPER_API_DOMAIN_NAME }}
-      HOUSEKEEPER_INVITATION_FROM_ADDRESS: ${{ vars.HOUSEKEEPER_INVITATION_FROM_ADDRESS }}
+      HOUSEKEEPER_PWA_CERTIFICATE_ARN: ${{ vars.HOUSEKEEPER_PWA_CERTIFICATE_ARN }}
+      HOUSEKEEPER_PWA_DOMAIN_NAME: ${{ vars.HOUSEKEEPER_PWA_DOMAIN_NAME }}
+      HOUSEKEEPER_ENABLE_GUARDDUTY: ${{ vars.HOUSEKEEPER_ENABLE_GUARDDUTY }}
       HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN: ${{ vars.HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN }}
       HOUSEKEEPER_API_DESIRED_COUNT: "0"
       EXPECTED_SOURCE_SHA: ${{ inputs.source_sha }}
@@ -159,7 +162,8 @@ jobs:
         run: |
           : "${HOUSEKEEPER_API_CERTIFICATE_ARN:?Configure HOUSEKEEPER_API_CERTIFICATE_ARN in the protected environment}"
           : "${HOUSEKEEPER_API_DOMAIN_NAME:?Configure HOUSEKEEPER_API_DOMAIN_NAME in the protected environment}"
-          : "${HOUSEKEEPER_INVITATION_FROM_ADDRESS:?Configure HOUSEKEEPER_INVITATION_FROM_ADDRESS in the protected environment}"
+          : "${HOUSEKEEPER_PWA_CERTIFICATE_ARN:?Configure HOUSEKEEPER_PWA_CERTIFICATE_ARN in the protected environment}"
+          : "${HOUSEKEEPER_PWA_DOMAIN_NAME:?Configure HOUSEKEEPER_PWA_DOMAIN_NAME in the protected environment}"
           : "${HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN:?Configure HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN in the protected environment}"
           cdk deploy --all --require-approval never --role-arn "${HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN}"
 
@@ -173,7 +177,7 @@ jobs:
               --query "Stacks[0].Outputs[?OutputKey=='$2'].OutputValue | [0]" \
               --output text
           }
-          repository_uri="$(output HouseKeeperApplication ApiRepositoryUri)"
+          repository_uri="$(output "${HOUSEKEEPER_STACK_PREFIX}Application" ApiRepositoryUri)"
           repository_name="${repository_uri#*/}"
           aws ecr get-login-password | docker login --username AWS --password-stdin "${repository_uri%%/*}"
           docker tag housekeeper-api:ci "${repository_uri}:${EXPECTED_SOURCE_SHA}"
@@ -197,7 +201,7 @@ jobs:
               --query "Stacks[0].Outputs[?OutputKey=='$2'].OutputValue | [0]" \
               --output text
           }
-          pwa_domain="$(output HouseKeeperStorage PwaDistributionDomain)"
+          pwa_domain="${HOUSEKEEPER_PWA_DOMAIN_NAME}"
           api_host="${HOUSEKEEPER_API_DOMAIN_NAME}"
           api_scheme="https"
           echo "HOUSEKEEPER_PWA_URL=https://${pwa_domain}" >> "${GITHUB_ENV}"
@@ -219,10 +223,10 @@ jobs:
               --query "Stacks[0].Outputs[?OutputKey=='$2'].OutputValue | [0]" \
               --output text
           }
-          cluster_name="$(output HouseKeeperApplication ApiClusterName)"
-          task_definition="$(output HouseKeeperApplication MigrationTaskDefinitionArn)"
-          migration_security_group="$(output HouseKeeperApplication MigrationSecurityGroupId)"
-          private_subnets="$(output HouseKeeperApplication PrivateSubnetIds)"
+          cluster_name="$(output "${HOUSEKEEPER_STACK_PREFIX}Application" ApiClusterName)"
+          task_definition="$(output "${HOUSEKEEPER_STACK_PREFIX}Application" MigrationTaskDefinitionArn)"
+          migration_security_group="$(output "${HOUSEKEEPER_STACK_PREFIX}Application" MigrationSecurityGroupId)"
+          private_subnets="$(output "${HOUSEKEEPER_STACK_PREFIX}Application" PrivateSubnetIds)"
           task_arn="$(aws ecs run-task \
             --cluster "${cluster_name}" \
             --task-definition "${task_definition}" \
@@ -265,10 +269,10 @@ jobs:
               --query "Stacks[0].Outputs[?OutputKey=='$2'].OutputValue | [0]" \
               --output text
           }
-          issuer="$(output HouseKeeperIdentity Issuer)"
-          client_id="$(output HouseKeeperIdentity WebClientId)"
-          bucket="$(output HouseKeeperStorage PwaBucketName)"
-          distribution_id="$(output HouseKeeperStorage PwaDistributionId)"
+          issuer="$(output "${HOUSEKEEPER_STACK_PREFIX}Identity" Issuer)"
+          client_id="$(output "${HOUSEKEEPER_STACK_PREFIX}Identity" WebClientId)"
+          bucket="$(output "${HOUSEKEEPER_STACK_PREFIX}Storage" PwaBucketName)"
+          distribution_id="$(output "${HOUSEKEEPER_STACK_PREFIX}Storage" PwaDistributionId)"
           pwa_root="artifacts/candidate/web/wwwroot"
           jq \
             --arg api "${HOUSEKEEPER_API_URL}/" \
@@ -318,7 +322,7 @@ jobs:
           set -euo pipefail
           output() {
             aws cloudformation describe-stacks \
-              --stack-name HouseKeeperApplication \
+              --stack-name "${HOUSEKEEPER_STACK_PREFIX}Application" \
               --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue | [0]" \
               --output text
           }

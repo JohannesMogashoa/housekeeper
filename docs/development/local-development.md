@@ -67,7 +67,7 @@ The repository has three intentional modes:
   a disposable test user, and the environment-specific public client settings.
 
 For shared development, configure the PWA public values from the CDK
-`HouseKeeperIdentity` outputs: hosted-login authority, web client ID, API
+`HouseKeeper-shared-development-Identity` outputs: hosted-login authority, web client ID, API
 base URL, callback URL, and logout URL. These values are safe for browser
 configuration; client secrets and AWS credentials are never required.
 
