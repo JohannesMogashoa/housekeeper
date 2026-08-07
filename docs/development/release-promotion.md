@@ -38,7 +38,7 @@ repository controls and must be checked during release-readiness review.
 | `ci.yml` -> `validate-development-pr.yml` | PR targeting `development` | No AWS credentials; build, tests, migration-backed API smoke, and no publishing |
 | `ci.yml` -> `validate.yml` | Push to `development`, `release/**`, or `master` | No AWS credentials; full validation and release artifacts where applicable |
 | `ci-release.yml` -> `validate.yml` | PR targeting `release/**` or `master` | No AWS credentials; full validation and release artifacts where applicable |
-| `codex-review-request.yml` | `pull_request_target` for every PR targeting `development` | Posts one safe `@codex review` request; never checks out or executes PR code |
+| `codex-review-request.yml` | `pull_request_target` for every PR targeting `development` | Requests a generated description and review; never checks out or executes PR code |
 | `promote-release-candidate.yml` | `rc/vX.Y.Z` tag push | Verifies ancestry and creates the release branch/PR; no AWS |
 | `release-preproduction.yml` | Manual dispatch for a release branch | Application-only changes skip AWS. Infrastructure or migration changes fail unless `enable_preproduction=true`; an enabled run deploys the exact candidate to `shared-development` |
 | `deploy-development.yml` | Manual dispatch | Calls the protected shared-development deployment with an exact candidate run |
