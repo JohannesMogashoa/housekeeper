@@ -90,7 +90,7 @@ public sealed class PlatformStackTests
     }
 
     [Fact]
-    public void DeliveryStackRestrictsOidcTrustToRepositoryBranch()
+    public void DeliveryStackRestrictsOidcTrustToProtectedGitHubEnvironment()
     {
         App app = new();
         PlatformConfiguration configuration = Configuration();
@@ -132,11 +132,13 @@ public sealed class PlatformStackTests
                                     ["Condition"] = Match.ObjectLike(
                                         new Dictionary<string, object>
                                         {
-                                            ["StringLike"] = Match.ObjectLike(
+                                            ["StringEquals"] = Match.ObjectLike(
                                                 new Dictionary<string, object>
                                                 {
+                                                    ["token.actions.githubusercontent.com:repository"] =
+                                                        "JohannesMogashoa/housekeeper",
                                                     ["token.actions.githubusercontent.com:sub"] =
-                                                        "repo:JohannesMogashoa/housekeeper:ref:refs/heads/master"
+                                                        "repo:JohannesMogashoa/housekeeper:environment:test"
                                                 })
                                         })
                                 })
@@ -199,7 +201,7 @@ public sealed class PlatformStackTests
         Account = "123456789012",
         Region = PlatformConfiguration.DefaultRegion,
         GitHubRepository = PlatformConfiguration.DefaultGitHubRepository,
-        GitHubBranch = "master",
+        GitHubEnvironment = "test",
         CognitoDomainPrefix = "housekeeper-test-domain",
         CallbackUrls = ["http://localhost:5136/authentication/login-callback"],
         LogoutUrls = ["http://localhost:5136/authentication/logout-callback"]

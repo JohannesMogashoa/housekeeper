@@ -2,185 +2,35 @@ name: Deploy shared development
 
 on:
   workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact release-branch commit produced by successful validation.
+        required: true
+        type: string
+      candidate_run_id:
+        description: Successful release-branch validation run containing the exact candidate artifact.
+        required: true
+        type: string
+      release_version:
+        description: Version represented by the candidate, for example v1.2.3.
+        required: true
+        type: string
 
 permissions:
   contents: read
+  actions: read
   id-token: write
-
-concurrency:
-  group: housekeeper-shared-development
-  cancel-in-progress: false
 
 jobs:
   deploy:
-    name: Provision and deploy shared development
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    environment: shared-development
-
-    env:
-      HOUSEKEEPER_ENVIRONMENT: shared-development
-      HOUSEKEEPER_AWS_REGION: af-south-1
-      HOUSEKEEPER_AWS_ACCOUNT: ${{ vars.HOUSEKEEPER_AWS_ACCOUNT }}
-      HOUSEKEEPER_GITHUB_REPOSITORY: JohannesMogashoa/housekeeper
-      HOUSEKEEPER_GITHUB_BRANCH: master
-      HOUSEKEEPER_API_CERTIFICATE_ARN: ${{ vars.HOUSEKEEPER_API_CERTIFICATE_ARN }}
-      HOUSEKEEPER_API_DOMAIN_NAME: ${{ vars.HOUSEKEEPER_API_DOMAIN_NAME }}
-      HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN: ${{ vars.HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN }}
-      HOUSEKEEPER_API_DESIRED_COUNT: "0"
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Install .NET SDK
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.300
-          cache: true
-          cache-dependency-path: Directory.Packages.props
-
-      - name: Install Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Install AWS CDK Toolkit
-        run: npm install --global aws-cdk@2.1132.1
-
-      - name: Restore and build release artifacts
-        run: |
-          dotnet restore HouseKeeper.slnx
-          dotnet build HouseKeeper.slnx --configuration Release --no-restore
-
-      - name: Configure AWS OIDC credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ${{ env.HOUSEKEEPER_AWS_REGION }}
-          role-to-assume: ${{ vars.HOUSEKEEPER_AWS_DEPLOY_ROLE_ARN }}
-          role-session-name: housekeeper-${{ github.run_id }}
-
-      - name: Provision shared AWS resources without an API task
-        working-directory: deploy/aws
-        run: |
-          : "${HOUSEKEEPER_API_CERTIFICATE_ARN:?Configure HOUSEKEEPER_API_CERTIFICATE_ARN in the protected environment}"
-          : "${HOUSEKEEPER_API_DOMAIN_NAME:?Configure HOUSEKEEPER_API_DOMAIN_NAME in the protected environment}"
-          : "${HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN:?Configure HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN in the protected environment}"
-          cdk deploy --all --require-approval never --role-arn "${HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN}"
-
-      - name: Build and publish immutable API image
-        id: image
-        shell: bash
-        run: |
-          set -euo pipefail
-          repository_uri="$(aws cloudformation describe-stacks \
-            --stack-name HouseKeeperApplication \
-            --query "Stacks[0].Outputs[?OutputKey=='ApiRepositoryUri'].OutputValue | [0]" \
-            --output text)"
-          repository_name="${repository_uri#*/}"
-          aws ecr get-login-password | docker login --username AWS --password-stdin "${repository_uri%%/*}"
-          docker build --file deploy/containers/HouseKeeper.Api.Dockerfile --tag "${repository_uri}:${GITHUB_SHA}" .
-          docker push "${repository_uri}:${GITHUB_SHA}"
-          image_digest="$(aws ecr describe-images \
-            --repository-name "${repository_name}" \
-            --image-ids imageTag="${GITHUB_SHA}" \
-            --query 'imageDetails[0].imageDigest' \
-            --output text)"
-          echo "HOUSEKEEPER_API_IMAGE_URI=${repository_uri}@${image_digest}" >> "${GITHUB_ENV}"
-
-      - name: Resolve shared environment endpoints
-        shell: bash
-        run: |
-          set -euo pipefail
-          output() {
-            aws cloudformation describe-stacks \
-              --stack-name "$1" \
-              --query "Stacks[0].Outputs[?OutputKey=='$2'].OutputValue | [0]" \
-              --output text
-          }
-          pwa_domain="$(output HouseKeeperStorage PwaDistributionDomain)"
-          echo "HOUSEKEEPER_PWA_URL=https://${pwa_domain}" >> "${GITHUB_ENV}"
-          echo "HOUSEKEEPER_COGNITO_CALLBACK_URLS=https://${pwa_domain}/authentication/login-callback" >> "${GITHUB_ENV}"
-          echo "HOUSEKEEPER_COGNITO_LOGOUT_URLS=https://${pwa_domain}/authentication/logout-callback" >> "${GITHUB_ENV}"
-          echo "HOUSEKEEPER_API_URL=https://${HOUSEKEEPER_API_DOMAIN_NAME}" >> "${GITHUB_ENV}"
-
-      - name: Register API image and Cognito callback configuration
-        working-directory: deploy/aws
-        run: cdk deploy --all --require-approval never --role-arn "${HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN}"
-
-      - name: Apply database migrations through the isolated ECS task
-        shell: bash
-        run: |
-          set -euo pipefail
-          output() {
-            aws cloudformation describe-stacks \
-              --stack-name "$1" \
-              --query "Stacks[0].Outputs[?OutputKey=='$2'].OutputValue | [0]" \
-              --output text
-          }
-          cluster_name="$(output HouseKeeperApplication ApiClusterName)"
-          task_definition="$(output HouseKeeperApplication MigrationTaskDefinitionArn)"
-          migration_security_group="$(output HouseKeeperApplication MigrationSecurityGroupId)"
-          private_subnets="$(output HouseKeeperApplication PrivateSubnetIds)"
-          task_arn="$(aws ecs run-task \
-            --cluster "${cluster_name}" \
-            --task-definition "${task_definition}" \
-            --launch-type FARGATE \
-            --network-configuration "awsvpcConfiguration={subnets=[${private_subnets}],securityGroups=[${migration_security_group}],assignPublicIp=DISABLED}" \
-            --query 'tasks[0].taskArn' \
-            --output text)"
-          test "${task_arn}" != "None"
-          aws ecs wait tasks-stopped --cluster "${cluster_name}" --tasks "${task_arn}"
-          exit_code="$(aws ecs describe-tasks \
-            --cluster "${cluster_name}" \
-            --tasks "${task_arn}" \
-            --query 'tasks[0].containers[0].exitCode' \
-            --output text)"
-          test "${exit_code}" = "0"
-
-      - name: Start API service after migrations
-        working-directory: deploy/aws
-        run: HOUSEKEEPER_API_DESIRED_COUNT=1 cdk deploy --all --require-approval never --role-arn "${HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN}"
-
-      - name: Publish PWA with deployed endpoints
-        shell: bash
-        run: |
-          set -euo pipefail
-          output() {
-            aws cloudformation describe-stacks \
-              --stack-name "$1" \
-              --query "Stacks[0].Outputs[?OutputKey=='$2'].OutputValue | [0]" \
-              --output text
-          }
-          issuer="$(output HouseKeeperIdentity Issuer)"
-          client_id="$(output HouseKeeperIdentity WebClientId)"
-          bucket="$(output HouseKeeperStorage PwaBucketName)"
-          distribution_id="$(output HouseKeeperStorage PwaDistributionId)"
-          jq \
-            --arg api "${HOUSEKEEPER_API_URL}/" \
-            --arg issuer "${issuer}" \
-            --arg client_id "${client_id}" \
-            --arg redirect "${HOUSEKEEPER_PWA_URL}/authentication/login-callback" \
-            --arg logout "${HOUSEKEEPER_PWA_URL}/authentication/logout-callback" \
-            '.ApiBaseUrl = $api |
-             .Authentication.Mode = "Cognito" |
-             .Authentication.Cognito.Authority = $issuer |
-             .Authentication.Cognito.ClientId = $client_id |
-             .Authentication.Cognito.RedirectUri = $redirect |
-             .Authentication.Cognito.PostLogoutRedirectUri = $logout' \
-            src/HouseKeeper.Web/wwwroot/appsettings.json > "${RUNNER_TEMP}/appsettings.json"
-          cp "${RUNNER_TEMP}/appsettings.json" src/HouseKeeper.Web/wwwroot/appsettings.json
-          dotnet publish src/HouseKeeper.Web/HouseKeeper.Web.csproj \
-            --configuration Release \
-            --no-restore \
-            --output "${RUNNER_TEMP}/housekeeper-web"
-          aws s3 sync "${RUNNER_TEMP}/housekeeper-web/wwwroot" "s3://${bucket}" --delete
-          aws cloudfront create-invalidation \
-            --distribution-id "${distribution_id}" \
-            --paths '/*' >/dev/null
-
-      - name: Run readiness and authenticated smoke checks
-        shell: bash
-        env:
-          SMOKE_ACCESS_TOKEN: ${{ secrets.HOUSEKEEPER_SMOKE_ACCESS_TOKEN }}
-        run: API_BASE_URL="${HOUSEKEEPER_API_URL}" bash scripts/smoke-aws.sh
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    uses: ./.github/workflows/deploy-environment.yml
+    with:
+      environment: shared-development
+      source_sha: ${{ inputs.source_sha }}
+      candidate_run_id: ${{ inputs.candidate_run_id }}
+      release_version: ${{ inputs.release_version }}
+    secrets: inherit

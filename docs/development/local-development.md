@@ -248,3 +248,73 @@ A new persistent module must provide:
 - no reference to another module implementation assembly.
 
 Review the [technical recommendation](../architecture/technical-recommendation.md) and [ADR index](../architecture/adr/README.md) before introducing a dependency that changes an approved boundary.
+
+## Validation before a pull request
+
+The local inner loop is intentionally AWS-free. Run the following before
+opening a PR. A pull request targeting `development` uses `ci.yml` and the
+reusable `.github/workflows/validate-development-pr.yml` workflow. It runs
+only the build, tests, migration-backed API smoke, and no-publishing/no-AWS
+path:
+
+```bash
+dotnet tool restore
+dotnet restore HouseKeeper.slnx
+dotnet build HouseKeeper.slnx --configuration Release --no-restore
+dotnet test tests/Modules/HouseKeeper.Modules.Households.Tests/HouseKeeper.Modules.Households.Tests.csproj --configuration Release --no-build
+dotnet test tests/HouseKeeper.Web.Tests/HouseKeeper.Web.Tests.csproj --configuration Release --no-build
+dotnet test tests/HouseKeeper.ArchitectureTests/HouseKeeper.ArchitectureTests.csproj --configuration Release --no-build
+dotnet test deploy/aws/tests/HouseKeeper.Infrastructure.Tests/HouseKeeper.Infrastructure.Tests.csproj --configuration Release --no-build
+dotnet ef database update --project src/Modules/HouseKeeper.Modules.Households --startup-project src/HouseKeeper.Api --context HouseholdsDbContext --configuration Release --no-build
+bash scripts/smoke.sh
+```
+
+Run the equivalent commands from PowerShell 7 on Windows. The full reusable
+`.github/workflows/validate.yml` workflow runs on pushes to protected branches
+and on pull requests targeting `release/**` or `master`; it additionally checks
+published API/PWA output, Playwright, strict CDK synthesis, policy reports,
+coverage, candidate artifacts, and API restart persistence.
+
+## Release-candidate validation
+
+After `development` is green, create a protected tag with the exact semantic
+version format `rc/vX.Y.Z`:
+
+```bash
+git fetch origin development
+git switch development
+git pull --ff-only origin development
+git tag -a rc/v1.2.3 -m "HouseKeeper v1.2.3 release candidate"
+git push origin rc/v1.2.3
+```
+
+The tag must be reachable from `development`. The promotion workflow creates
+`release/v1.2.3` and one PR into `master`; do not create a release PR directly
+after an ordinary development merge. Wait for the release branch push
+validation and record the successful run ID that produced
+`housekeeper-candidate-<source-sha>`.
+
+For a release PR, application-only changes need no AWS run. If the changed-file
+gate identifies CDK, container, migration, workflow, or AWS smoke changes,
+dispatch `release-preproduction.yml` with the release branch, exact source SHA,
+and `enable_preproduction=true`. The protected `shared-development` environment
+must approve the run. The same candidate is then used for production; it is not
+rebuilt.
+
+## Failed workflows and artifacts
+
+Development pull-request validation does not upload artifacts: inspect the
+failed step logs in the run. Full validation uploads
+`housekeeper-validation-<run-id>` with restore, build, test, CDK, migration,
+smoke, browser, and restart diagnostics. Release-branch validation additionally
+publishes a candidate artifact with metadata, the published API/PWA, and the
+API image tar. Protected deployments publish `housekeeper-deployment-*` with
+the source SHA, release version, image digest, CDK diff, and safe deployment
+evidence.
+
+For migration failures, keep the API stopped in the protected environment,
+inspect the isolated ECS migration task logs, and fix the forward-compatible
+migration in a new candidate. Do not edit the EF history table or run an
+automatic down-migration. For a failed deployment, use the previous immutable
+image digest or the documented RDS snapshot recovery path; a final release tag
+is created only after production deployment succeeds.
