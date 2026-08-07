@@ -198,7 +198,7 @@ feature/* -> development -> rc/vX.Y.Z -> release/vX.Y.Z -> master -> vX.Y.Z
 
 | Event | Result |
 |---|---|
-| PR to `development` | Lightweight build, tests, migration-backed API smoke, and an idempotent Codex review request; no publishing, artifacts, AWS credentials, or deployment |
+| PR to `development` | Lightweight build, tests, migration-backed API smoke, and an idempotent Codex description/review request; no publishing, artifacts, AWS credentials, or deployment |
 | PR to `release/**` or `master` | Full reusable validation; no AWS credentials or deployment |
 | Push to `development` | Full reusable validation only; no AWS credentials or deployment |
 | Protected `rc/vX.Y.Z` tag | Verifies ancestry from `development`, creates `release/vX.Y.Z`, and opens one promotion PR to `master` |
