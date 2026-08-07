@@ -1,0 +1,175 @@
+@using HouseKeeper.Contracts.Households
+@using HouseKeeper.Web.Services
+
+@inject IApiAuthentication Authentication
+@inject HouseKeeperApiClient ApiClient
+
+<section class="card shadow-sm mb-4" aria-labelledby="membership-heading-@HouseholdId">
+    <div class="card-body p-4">
+        <h2 id="membership-heading-@HouseholdId" class="h4">Members and invitations</h2>
+
+        @if (!string.IsNullOrWhiteSpace(errorMessage))
+        {
+            <div class="alert alert-danger" role="alert">@errorMessage</div>
+        }
+
+        @if (IsOwner)
+        {
+        <div class="row g-3">
+            <div class="col-md-6">
+                <h3 class="h6">Invite a member</h3>
+                <label class="form-label" for="invite-email-@HouseholdId">Email address</label>
+                <input id="invite-email-@HouseholdId"
+                       class="form-control"
+                       type="email"
+                       autocomplete="email"
+                       @bind="inviteEmail"
+                       @bind:event="oninput" />
+                <button class="btn btn-primary mt-2"
+                        disabled="@isBusy"
+                        @onclick="CreateInvitationAsync">
+                    Send invitation
+                </button>
+            </div>
+
+            <div class="col-md-6">
+                <h3 class="h6">Pending invitations</h3>
+                @if (invitations.Count == 0)
+                {
+                    <p class="text-secondary small">No invitations found.</p>
+                }
+                else
+                {
+                    <ul class="list-group list-group-flush">
+                        @foreach (InvitationSummary invitation in invitations)
+                        {
+                            <li class="list-group-item px-0 d-flex justify-content-between align-items-start gap-2">
+                                <span>
+                                    <strong>@invitation.State</strong>
+                                    <small class="d-block text-secondary">Expires @invitation.ExpiresAtUtc.ToLocalTime():g</small>
+                                </span>
+                                @if (invitation.State == "Pending")
+                                {
+                                    <button class="btn btn-outline-danger btn-sm"
+                                            disabled="@isBusy"
+                                            @onclick="() => RevokeInvitationAsync(invitation.Id)">
+                                        Revoke
+                                    </button>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+        }
+
+        <h3 class="h6 mt-4">Household members</h3>
+        @if (members.Count == 0)
+        {
+            <p class="text-secondary small">No members found.</p>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <caption class="visually-hidden">Household members and roles</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Member</th>
+                            <th scope="col">Role</th>
+                            <th scope="col">Status</th>
+                            <th scope="col"><span class="visually-hidden">Actions</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (HouseholdMemberSummary member in members)
+                        {
+                            <tr>
+                                <td>@member.DisplayName</td>
+                                <td>@member.Role</td>
+                                <td>@member.Status</td>
+                                <td class="text-end">
+                                    @if (member.Status == "Active")
+                                    {
+                                        <button class="btn btn-outline-danger btn-sm"
+                                                disabled="@isBusy"
+                                                @onclick="() => RemoveMemberAsync(member.MemberId)">
+                                            Remove
+                                        </button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired]
+    public Guid HouseholdId { get; set; }
+
+    [Parameter]
+    public bool IsOwner { get; set; }
+
+    private IReadOnlyList<InvitationSummary> invitations = [];
+    private IReadOnlyList<HouseholdMemberSummary> members = [];
+    private string inviteEmail = string.Empty;
+    private string? errorMessage;
+    private bool isBusy;
+
+    protected override async Task OnParametersSetAsync() => await ExecuteAsync(LoadAsync);
+
+    private async Task LoadAsync()
+    {
+        members = await ApiClient.ListMembersAsync(Authentication, HouseholdId);
+        invitations = IsOwner
+            ? await ApiClient.ListInvitationsAsync(Authentication, HouseholdId)
+            : [];
+    }
+
+    private Task CreateInvitationAsync() => ExecuteAsync(async () =>
+    {
+        await ApiClient.CreateInvitationAsync(Authentication, HouseholdId, inviteEmail);
+        inviteEmail = string.Empty;
+        await LoadAsync();
+    });
+
+    private Task RevokeInvitationAsync(Guid invitationId) => ExecuteAsync(async () =>
+    {
+        await ApiClient.RevokeInvitationAsync(Authentication, HouseholdId, invitationId);
+        await LoadAsync();
+    });
+
+    private Task RemoveMemberAsync(Guid memberId) => ExecuteAsync(async () =>
+    {
+        await ApiClient.RemoveMemberAsync(Authentication, HouseholdId, memberId);
+        await LoadAsync();
+    });
+
+    private async Task ExecuteAsync(Func<Task> action)
+    {
+        if (isBusy)
+        {
+            return;
+        }
+
+        isBusy = true;
+        errorMessage = null;
+        try
+        {
+            await action();
+        }
+        catch
+        {
+            errorMessage = "We could not complete that household action.";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+}

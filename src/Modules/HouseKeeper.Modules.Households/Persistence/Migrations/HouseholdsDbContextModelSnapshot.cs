@@ -37,6 +37,10 @@ public sealed class HouseholdsDbContextModelSnapshot : ModelSnapshot
 
         modelBuilder.Entity("HouseKeeper.Modules.Households.Persistence.HouseholdMember", entity =>
         {
+            entity.Property<Guid>("MemberId")
+                .ValueGeneratedNever()
+                .HasColumnType("uuid");
+
             entity.Property<Guid>("HouseholdId")
                 .HasColumnType("uuid");
 
@@ -52,12 +56,82 @@ public sealed class HouseholdsDbContextModelSnapshot : ModelSnapshot
                 .HasMaxLength(32)
                 .HasColumnType("character varying(32)");
 
-            entity.HasKey("HouseholdId", "Subject");
+            entity.Property<DateTimeOffset?>("RemovedAtUtc")
+                .HasColumnType("timestamp with time zone");
+
+            entity.Property<string>("Status")
+                .IsRequired()
+                .HasMaxLength(32)
+                .HasColumnType("character varying(32)");
+
+            entity.HasKey("MemberId");
+            entity.HasIndex("HouseholdId", "Subject")
+                .IsUnique();
             entity.HasIndex("Subject");
             entity.ToTable("household_members", HouseholdsDbContext.Schema);
         });
 
         modelBuilder.Entity("HouseKeeper.Modules.Households.Persistence.HouseholdMember", entity =>
+        {
+            entity.HasOne("HouseKeeper.Modules.Households.Persistence.Household", null)
+                .WithMany()
+                .HasForeignKey("HouseholdId")
+                .OnDelete(DeleteBehavior.Cascade)
+                .IsRequired();
+        });
+
+        modelBuilder.Entity("HouseKeeper.Modules.Households.Persistence.Invitation", entity =>
+        {
+            entity.Property<Guid>("Id")
+                .ValueGeneratedNever()
+                .HasColumnType("uuid");
+
+            entity.Property<Guid?>("AcceptedByMemberId")
+                .HasColumnType("uuid");
+
+            entity.Property<DateTimeOffset?>("AcceptedAtUtc")
+                .HasColumnType("timestamp with time zone");
+
+            entity.Property<DateTimeOffset>("ExpiresAtUtc")
+                .HasColumnType("timestamp with time zone");
+
+            entity.Property<Guid>("HouseholdId")
+                .HasColumnType("uuid");
+
+            entity.Property<Guid>("InviterMemberId")
+                .HasColumnType("uuid");
+
+            entity.Property<DateTimeOffset>("InvitedAtUtc")
+                .HasColumnType("timestamp with time zone");
+
+            entity.Property<DateTimeOffset?>("RevokedAtUtc")
+                .HasColumnType("timestamp with time zone");
+
+            entity.Property<string>("State")
+                .IsRequired()
+                .HasMaxLength(32)
+                .HasColumnType("character varying(32)");
+
+            entity.Property<string>("TargetEmailDigest")
+                .IsRequired()
+                .HasMaxLength(64)
+                .HasColumnType("character varying(64)");
+
+            entity.Property<string>("TokenDigest")
+                .IsRequired()
+                .HasMaxLength(64)
+                .HasColumnType("character varying(64)");
+
+            entity.Property<DateTimeOffset>("UpdatedAtUtc")
+                .HasColumnType("timestamp with time zone");
+
+            entity.HasKey("Id");
+            entity.HasIndex("HouseholdId", "State");
+            entity.HasIndex("TokenDigest").IsUnique();
+            entity.ToTable("invitations", HouseholdsDbContext.Schema);
+        });
+
+        modelBuilder.Entity("HouseKeeper.Modules.Households.Persistence.Invitation", entity =>
         {
             entity.HasOne("HouseKeeper.Modules.Households.Persistence.Household", null)
                 .WithMany()

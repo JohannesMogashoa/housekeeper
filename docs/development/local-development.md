@@ -49,9 +49,11 @@ The command:
 5. starts the API at `http://localhost:5287`;
 6. starts the PWA at `http://localhost:5136`.
 
-Open `http://localhost:5136`, choose `Sign in`, enter a development display name,
-and create a household. The page labels this as Development sign-in so it is
-clear that this is a local learning path rather than production authentication.
+Open `http://localhost:5136`, choose `Sign in`, enter a development display name
+and email address, and create a household. The email is a local-only verified
+identity claim used to exercise invitation matching; it is not a production
+identity mapping. The page labels this as Development sign-in so it is clear
+that this is a local learning path rather than production authentication.
 
 The development identity is deliberately local-only. It exercises the same authentication and authorization middleware boundary that the production identity provider will use, but it is not production authentication.
 
@@ -75,6 +77,20 @@ The sign-in page intentionally explains that Cognito verifies identity while
 HouseKeeper membership rows determine household access. Passwords, recovery
 codes, access tokens, and refresh tokens must remain out of logs and support
 artifacts.
+
+## Household invitations
+
+Household invitations are matched to the invitee's verified email claim and
+expire after seven days. Only the SHA-256 digest of the bearer token and target
+email are stored. The token is delivered through the configured invitation
+provider and is not returned by the API or written to logs.
+
+Local Development uses disabled delivery so it does not require AWS
+credentials. Shared-development and production use Amazon SES when
+`InvitationDelivery:Mode` is `Ses`; configure the verified sender through
+`HOUSEKEEPER_INVITATION_FROM_ADDRESS` and the PWA origin through the CDK
+environment configuration. SES identity verification and sending limits remain
+deployment prerequisites.
 
 The local S3-compatible endpoint is `http://localhost:9000` with console
 `http://localhost:9001`. It is for provider-neutral attachment tests only and

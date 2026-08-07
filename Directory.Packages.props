@@ -55,6 +55,9 @@
     <PackageVersion Include="Amazon.CDK.Lib"
                     Version="2.262.1" />
 
+    <PackageVersion Include="AWSSDK.SimpleEmailV2"
+                    Version="3.7.401" />
+
     <PackageVersion Include="Cdklabs.CdkNag"
                     Version="2.37.56" />
   </ItemGroup>

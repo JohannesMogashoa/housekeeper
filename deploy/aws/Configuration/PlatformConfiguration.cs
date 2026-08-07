@@ -19,6 +19,8 @@ public sealed record PlatformConfiguration
 
     public string? ApiDomainName { get; init; }
 
+    public string? InvitationFromAddress { get; init; }
+
     public string? ApiImageUri { get; init; }
 
     public int ApiDesiredCount { get; init; } = 1;
@@ -52,6 +54,7 @@ public sealed record PlatformConfiguration
             GitHubBranch = Get("HOUSEKEEPER_GITHUB_BRANCH", "master"),
             ApiCertificateArn = GetOptional("HOUSEKEEPER_API_CERTIFICATE_ARN"),
             ApiDomainName = GetOptional("HOUSEKEEPER_API_DOMAIN_NAME"),
+            InvitationFromAddress = GetOptional("HOUSEKEEPER_INVITATION_FROM_ADDRESS"),
             ApiImageUri = GetOptional("HOUSEKEEPER_API_IMAGE_URI"),
             ApiDesiredCount = GetInt("HOUSEKEEPER_API_DESIRED_COUNT", 1),
             CognitoDomainPrefix = Get(
@@ -107,6 +110,12 @@ public sealed record PlatformConfiguration
         {
             throw new InvalidOperationException(
                 "Production requires HOUSEKEEPER_API_CERTIFICATE_ARN and HOUSEKEEPER_API_DOMAIN_NAME.");
+        }
+
+        if (IsProtectedEnvironment && string.IsNullOrWhiteSpace(InvitationFromAddress))
+        {
+            throw new InvalidOperationException(
+                "Protected environments require HOUSEKEEPER_INVITATION_FROM_ADDRESS.");
         }
     }
 

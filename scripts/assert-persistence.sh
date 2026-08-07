@@ -7,6 +7,7 @@ household_name="${SMOKE_HOUSEHOLD_NAME:?SMOKE_HOUSEHOLD_NAME is required}"
 listed="$(curl --fail --silent --show-error \
   -H "X-HouseKeeper-Subject: hk14-smoke-user" \
   -H "X-HouseKeeper-Display-Name: HK-14 Smoke User" \
+  -H "X-HouseKeeper-Email: hk14-smoke-user@local.test" \
   "${api_base_url}/api/households")"
 
 grep --fixed-strings --quiet "\"name\":\"${household_name}\"" <<<"${listed}"

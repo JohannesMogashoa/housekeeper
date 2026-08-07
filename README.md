@@ -1,6 +1,6 @@
 # HouseKeeper
 
-HouseKeeper is a mobile-first household management application. This repository currently contains the HK-14 architecture walking skeleton and the HK-28 AWS platform foundation: an installable Blazor WebAssembly PWA, an ASP.NET Core API, PostgreSQL-backed modules, and reviewable AWS CDK/container definitions.
+HouseKeeper is a mobile-first household management application. The repository contains the HK-14 architecture walking skeleton, HK-19 household invitations and membership roles, and the HK-28 AWS platform foundation: an installable Blazor WebAssembly PWA, an ASP.NET Core API, PostgreSQL-backed modules, and reviewable AWS CDK/container definitions.
 
 ## Project documentation
 
@@ -21,6 +21,11 @@ A development user can:
 4. create a household and owner membership in one transaction;
 5. restart both the browser and API process;
 6. load the same household from PostgreSQL.
+
+Household owners can invite a verified email address, while authenticated
+invitees can preview and accept a seven-day invitation. Membership access is
+owned by HouseKeeper rows, not Cognito groups or claims. Local delivery is
+disabled by default; SES delivery is enabled only when explicitly configured.
 
 The development identity is intentionally not production authentication. It is enabled only in the `Development` environment and exists to exercise the same claims, authorization, API, and persistence boundaries that an external identity provider will use later.
 
@@ -70,7 +75,7 @@ The walking skeleton establishes four test layers:
 
 | Layer | Tooling | Current responsibility |
 |---|---|---|
-| Domain | xUnit v3 on Microsoft Testing Platform v2 | Household-name invariants |
+| Domain | xUnit v3 on Microsoft Testing Platform v2 | Household-name, member-lifecycle, and invitation-token invariants |
 | Component | bUnit 2 | Empty and populated household rendering |
 | Architecture | ArchUnitNET plus reflection assertions | Module and dependency boundaries |
 | End-to-end | Playwright Chromium | Published PWA, authentication, creation, reload, and persistence |
@@ -154,6 +159,7 @@ HouseKeeper.Modules.Households
   household-name invariant
   create/list use cases
   application-owned membership authorization boundary
+  invitation and member lifecycle endpoints
   EF Core module context and migrations
          |
          v

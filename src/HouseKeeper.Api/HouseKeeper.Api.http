@@ -1,6 +1,35 @@
 @HouseKeeper.Api_HostAddress = http://localhost:5287
+@HouseholdId = 00000000-0000-0000-0000-000000000000
+@InvitationId = 00000000-0000-0000-0000-000000000000
+@MemberId = 00000000-0000-0000-0000-000000000000
 
-GET {{HouseKeeper.Api_HostAddress}}/weatherforecast/
+### List households (Development authentication)
+GET {{HouseKeeper.Api_HostAddress}}/api/households
+X-HouseKeeper-Subject: api-http-user
+X-HouseKeeper-Display-Name: API HTTP User
+X-HouseKeeper-Email: api-http-user@local.test
 Accept: application/json
 
-###
+### Create an invitation
+POST {{HouseKeeper.Api_HostAddress}}/api/households/{{HouseholdId}}/invitations
+X-HouseKeeper-Subject: api-http-user
+X-HouseKeeper-Display-Name: API HTTP User
+X-HouseKeeper-Email: api-http-user@local.test
+Content-Type: application/json
+
+{
+  "email": "invitee@example.test"
+}
+
+### List active and removed member records
+GET {{HouseKeeper.Api_HostAddress}}/api/households/{{HouseholdId}}/members
+X-HouseKeeper-Subject: api-http-user
+X-HouseKeeper-Display-Name: API HTTP User
+X-HouseKeeper-Email: api-http-user@local.test
+Accept: application/json
+
+### Revoke an invitation
+POST {{HouseKeeper.Api_HostAddress}}/api/households/{{HouseholdId}}/invitations/{{InvitationId}}/revoke
+X-HouseKeeper-Subject: api-http-user
+X-HouseKeeper-Display-Name: API HTTP User
+X-HouseKeeper-Email: api-http-user@local.test

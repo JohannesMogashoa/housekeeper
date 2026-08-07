@@ -15,7 +15,9 @@ public sealed class DevelopmentAuthenticationStateProvider(DevelopmentSession se
             : new ClaimsIdentity(
                 [
                     new Claim(ClaimTypes.NameIdentifier, identity.Subject),
-                    new Claim(ClaimTypes.Name, identity.DisplayName)
+                    new Claim(ClaimTypes.Name, identity.DisplayName),
+                    new Claim(ClaimTypes.Email, identity.Email),
+                    new Claim("email_verified", "true")
                 ],
                 "Development");
 

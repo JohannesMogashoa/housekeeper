@@ -4,11 +4,13 @@ set -euo pipefail
 api_base_url="${API_BASE_URL:-http://127.0.0.1:5287}"
 subject="hk14-smoke-user"
 display_name="HK-14 Smoke User"
+email="hk14-smoke-user@local.test"
 household_name="${SMOKE_HOUSEHOLD_NAME:-HK-14 Smoke Household ${GITHUB_RUN_ID:-local}-$(date +%s)}"
 
 headers=(
   -H "X-HouseKeeper-Subject: ${subject}"
   -H "X-HouseKeeper-Display-Name: ${display_name}"
+  -H "X-HouseKeeper-Email: ${email}"
 )
 
 curl --fail --silent --show-error "${api_base_url}/health/live" >/dev/null

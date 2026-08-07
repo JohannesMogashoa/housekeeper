@@ -1,0 +1,100 @@
+@page "/invitations/{Token}"
+
+@using HouseKeeper.Contracts.Households
+@using HouseKeeper.Web.Services
+
+@inject IApiAuthentication Authentication
+@inject HouseKeeperApiClient ApiClient
+
+<PageTitle>Household invitation</PageTitle>
+
+<div class="container py-4" style="max-width: 42rem;">
+    <section class="card shadow-sm" aria-labelledby="invitation-heading">
+        <div class="card-body p-4">
+            <h1 id="invitation-heading" class="h3">Household invitation</h1>
+
+            @if (isBusy)
+            {
+                <p class="text-secondary" role="status">Checking this invitation…</p>
+            }
+            else if (preview is null)
+            {
+                <p class="text-secondary">This invitation could not be loaded.</p>
+            }
+            else if (preview.State == "Pending")
+            {
+                <p>You have been invited to join <strong>@preview.HouseholdName</strong>.</p>
+                <button class="btn btn-primary" disabled="@isBusy" @onclick="AcceptAsync">
+                    Accept invitation
+                </button>
+            }
+            else
+            {
+                <p class="text-secondary">This invitation is @preview.State.ToLowerInvariant() and cannot be accepted.</p>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(message))
+            {
+                <div class="alert alert-info mt-3" role="status">@message</div>
+            }
+        </div>
+    </section>
+</div>
+
+@code {
+    [Parameter]
+    public string Token { get; set; } = string.Empty;
+
+    private InvitationPreview? preview;
+    private string? message;
+    private bool isBusy = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await Authentication.IsAuthenticatedAsync())
+        {
+            message = "Sign in to preview and accept this invitation.";
+            isBusy = false;
+            return;
+        }
+
+        try
+        {
+            preview = await ApiClient.PreviewInvitationAsync(Authentication, Token);
+        }
+        catch
+        {
+            message = "This invitation is unavailable or no longer valid.";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task AcceptAsync()
+    {
+        isBusy = true;
+        message = null;
+        try
+        {
+            AcceptInvitationResponse result = await ApiClient.AcceptInvitationAsync(
+                Authentication,
+                Token);
+            message = result.AlreadyAccepted
+                ? "This invitation was already accepted by your account."
+                : "You are now a member of this household.";
+            preview = preview is null
+                ? null
+                : preview with { State = "Accepted" };
+        }
+        catch
+        {
+            message = "This invitation could not be accepted. It may be expired, revoked, or assigned to another account.";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+}

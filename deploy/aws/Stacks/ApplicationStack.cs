@@ -108,6 +108,25 @@ public sealed class ApplicationStack : Stack
         MigrationLogGroup = CreateLogGroup("MigrationLogGroup", "migration", configuration);
         ApiRepository.GrantPull(ExecutionRole);
         ApiLogGroup.GrantWrite(ExecutionRole);
+        if (configuration.InvitationFromAddress is { Length: > 0 } invitationFromAddress)
+        {
+            TaskRole.AddToPolicy(new PolicyStatement(new PolicyStatementProps
+            {
+                Actions = ["ses:SendEmail"],
+                Effect = Effect.ALLOW,
+                Resources =
+                [
+                    Arn.Format(
+                        new ArnComponents
+                        {
+                            Service = "ses",
+                            Resource = "identity",
+                            ResourceName = invitationFromAddress
+                        },
+                        this)
+                ]
+            }));
+        }
 
         Dictionary<string, string> taskEnvironment = new()
         {
@@ -115,7 +134,11 @@ public sealed class ApplicationStack : Stack
             ["HOUSEKEEPER_AWS_REGION"] = configuration.Region,
             ["Authentication__Mode"] = "Cognito",
             ["Authentication__Cognito__Authority"] = identity.Issuer,
-            ["Authentication__Cognito__ClientId"] = identity.WebClient.UserPoolClientId
+            ["Authentication__Cognito__ClientId"] = identity.WebClient.UserPoolClientId,
+            ["InvitationDelivery__Mode"] = configuration.InvitationFromAddress is null
+                ? "Disabled"
+                : "Ses",
+            ["InvitationDelivery__FromAddress"] = configuration.InvitationFromAddress ?? string.Empty
         };
         string[] pwaOrigins = configuration.CallbackUrls
             .Select(static url => new Uri(url).GetLeftPart(UriPartial.Authority))
@@ -125,6 +148,7 @@ public sealed class ApplicationStack : Stack
         {
             taskEnvironment[$"Cors__AllowedOrigins__{index}"] = pwaOrigins[index];
         }
+        taskEnvironment["InvitationDelivery__WebBaseUrl"] = pwaOrigins[0];
 
         ContainerImage apiImage = configuration.ApiImageUri is null
             ? ContainerImage.FromEcrRepository(ApiRepository, "bootstrap")

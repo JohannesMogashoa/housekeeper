@@ -14,6 +14,7 @@ public sealed class DevelopmentApiAuthentication(DevelopmentSession session)
 
         request.Headers.Add(DevelopmentSession.SubjectHeader, identity.Subject);
         request.Headers.Add(DevelopmentSession.DisplayNameHeader, identity.DisplayName);
+        request.Headers.Add(DevelopmentSession.EmailHeader, identity.Email);
     }
 
     public Task SignOutAsync() => session.SignOutAsync().AsTask();

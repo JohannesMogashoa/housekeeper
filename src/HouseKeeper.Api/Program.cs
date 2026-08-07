@@ -2,8 +2,13 @@ using System.Diagnostics;
 using System.Security.Claims;
 using System.IdentityModel.Tokens.Jwt;
 
+using Amazon.SimpleEmailV2;
+
 using HouseKeeper.Api.Authentication;
+using HouseKeeper.Api.Invitations;
 using HouseKeeper.Contracts.Authentication;
+using HouseKeeper.Contracts.Households;
+using HouseKeeper.Modules.Households.Application;
 using HouseKeeper.Modules.Households;
 using HouseKeeper.Modules.Households.Persistence;
 
@@ -44,6 +49,33 @@ if (string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("HouseKe
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddHttpClient("CognitoUserInfo");
+builder.Services.AddScoped<IIdentityEmailResolver, CognitoIdentityEmailResolver>();
+builder.Services.Configure<InvitationDeliveryOptions>(
+    builder.Configuration.GetSection("InvitationDelivery"));
+
+bool sesInvitationDelivery = string.Equals(
+    builder.Configuration["InvitationDelivery:Mode"],
+    "Ses",
+    StringComparison.OrdinalIgnoreCase);
+if (sesInvitationDelivery)
+{
+    builder.Services.AddSingleton<IAmazonSimpleEmailServiceV2>(
+        _ => new AmazonSimpleEmailServiceV2Client());
+    builder.Services.AddScoped<IInvitationDelivery, SesInvitationDelivery>();
+
+    if (string.IsNullOrWhiteSpace(builder.Configuration["InvitationDelivery:FromAddress"]) ||
+        string.IsNullOrWhiteSpace(builder.Configuration["InvitationDelivery:WebBaseUrl"]))
+    {
+        throw new InvalidOperationException(
+            "SES invitation delivery requires a from address and PWA base URL.");
+    }
+}
+else
+{
+    builder.Services.AddSingleton<IInvitationDelivery, DisabledInvitationDelivery>();
+}
 
 bool developmentAuthentication = builder.Environment.IsDevelopment() &&
     string.Equals(

@@ -52,6 +52,15 @@
                            maxlength="120"
                            @bind="displayName"
                            @bind:event="oninput" />
+
+                    <label class="form-label mt-3" for="email">Email address</label>
+                    <input id="email"
+                           class="form-control"
+                           type="email"
+                           data-testid="email"
+                           autocomplete="email"
+                           @bind="email"
+                           @bind:event="oninput" />
                 }
 
                 <button class="btn btn-primary mt-3"
@@ -120,6 +129,12 @@
 
             <HouseholdList Items="@households" />
         </section>
+
+        @foreach (HouseholdSummary household in households)
+        {
+            <HouseholdMembershipPanel HouseholdId="@household.Id"
+                                      IsOwner="@string.Equals(household.Role, MemberRoleNames.Owner, StringComparison.Ordinal)" />
+        }
     }
 </div>
 
@@ -127,6 +142,7 @@
     private CurrentUserResponse? currentUser;
     private IReadOnlyList<HouseholdSummary> households = [];
     private string displayName = string.Empty;
+    private string email = string.Empty;
     private string householdName = string.Empty;
     private string? errorMessage;
     private bool isBusy;
@@ -156,9 +172,10 @@
         return ExecuteAsync(async () =>
         {
             DevelopmentSession session = GetDevelopmentSession();
-            _ = await session.SignInAsync(displayName);
+            _ = await session.SignInAsync(displayName, email);
             await LoadHouseholdsCoreAsync();
             displayName = string.Empty;
+            email = string.Empty;
         });
     }
 

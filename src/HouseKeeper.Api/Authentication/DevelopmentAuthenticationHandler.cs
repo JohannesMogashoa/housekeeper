@@ -16,6 +16,7 @@ internal sealed class DevelopmentAuthenticationHandler(
     public const string SchemeName = "Development";
     public const string SubjectHeader = "X-HouseKeeper-Subject";
     public const string DisplayNameHeader = "X-HouseKeeper-Display-Name";
+    public const string EmailHeader = "X-HouseKeeper-Email";
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
@@ -26,8 +27,9 @@ internal sealed class DevelopmentAuthenticationHandler(
 
         string subject = Request.Headers[SubjectHeader].ToString().Trim();
         string displayName = Request.Headers[DisplayNameHeader].ToString().Trim();
+        string email = Request.Headers[EmailHeader].ToString().Trim();
 
-        if (subject.Length == 0 || displayName.Length == 0)
+        if (subject.Length == 0 || displayName.Length == 0 || email.Length == 0)
         {
             return Task.FromResult(AuthenticateResult.NoResult());
         }
@@ -35,7 +37,9 @@ internal sealed class DevelopmentAuthenticationHandler(
         Claim[] claims =
         [
             new(ClaimTypes.NameIdentifier, subject),
-            new(ClaimTypes.Name, displayName)
+            new(ClaimTypes.Name, displayName),
+            new(ClaimTypes.Email, email),
+            new("email_verified", "true")
         ];
 
         ClaimsIdentity identity = new(claims, SchemeName);
