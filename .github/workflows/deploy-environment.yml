@@ -43,6 +43,7 @@ jobs:
       HOUSEKEEPER_GITHUB_REPOSITORY: ${{ github.repository }}
       HOUSEKEEPER_API_CERTIFICATE_ARN: ${{ vars.HOUSEKEEPER_API_CERTIFICATE_ARN }}
       HOUSEKEEPER_API_DOMAIN_NAME: ${{ vars.HOUSEKEEPER_API_DOMAIN_NAME }}
+      HOUSEKEEPER_INVITATION_FROM_ADDRESS: ${{ vars.HOUSEKEEPER_INVITATION_FROM_ADDRESS }}
       HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN: ${{ vars.HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN }}
       HOUSEKEEPER_API_DESIRED_COUNT: "0"
       EXPECTED_SOURCE_SHA: ${{ inputs.source_sha }}
@@ -158,6 +159,7 @@ jobs:
         run: |
           : "${HOUSEKEEPER_API_CERTIFICATE_ARN:?Configure HOUSEKEEPER_API_CERTIFICATE_ARN in the protected environment}"
           : "${HOUSEKEEPER_API_DOMAIN_NAME:?Configure HOUSEKEEPER_API_DOMAIN_NAME in the protected environment}"
+          : "${HOUSEKEEPER_INVITATION_FROM_ADDRESS:?Configure HOUSEKEEPER_INVITATION_FROM_ADDRESS in the protected environment}"
           : "${HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN:?Configure HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN in the protected environment}"
           cdk deploy --all --require-approval never --role-arn "${HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN}"
 

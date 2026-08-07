@@ -2,6 +2,9 @@
 
 HouseKeeper uses OpenAI Codex code review for repository-aware pull-request analysis. Codex supplements—not replaces—the author's verification, the complete CI pipeline, and deliberate human approval.
 
+For first-time GitHub ruleset, environment, OIDC, and Codex configuration, use
+the [GitHub project and deployment setup guide](github-project-setup.md).
+
 ## Why Codex
 
 Codex can review a pull request against its stated intent, inspect the broader repository rather than only isolated diff fragments, and run or reason about tests and dependencies. It can review automatically when enabled for the repository or on demand through a pull-request mention.

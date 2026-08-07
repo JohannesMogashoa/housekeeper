@@ -5,6 +5,10 @@ initial region is `af-south-1`. `shared-development` is one reused,
 disposable pre-production environment; `production` is isolated and retained.
 Ordinary development and CI validation do not assume AWS credentials.
 
+For the complete first-time setup sequence, including GitHub rulesets, Codex,
+OIDC, ACM, SES, Cognito smoke access, environment variables, and secrets, see
+the [GitHub project and deployment setup guide](../../docs/development/github-project-setup.md).
+
 ## Stacks and ownership
 
 - `NetworkStack`: VPC, load-balancer subnets, private application subnets,
@@ -62,6 +66,7 @@ supplies these variables:
 | `HOUSEKEEPER_CFN_EXECUTION_ROLE_ARN` | CloudFormation execution role passed by CDK |
 | `HOUSEKEEPER_API_CERTIFICATE_ARN` | ACM certificate for the API HTTPS listener; required in production |
 | `HOUSEKEEPER_API_DOMAIN_NAME` | DNS name routed to the API ALB; required in production |
+| `HOUSEKEEPER_INVITATION_FROM_ADDRESS` | Verified SES sender used for household invitations |
 
 Add `HOUSEKEEPER_SMOKE_ACCESS_TOKEN` as a protected environment secret. It is
 used in memory for authenticated smoke and persistence checks and is never

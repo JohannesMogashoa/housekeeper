@@ -28,13 +28,18 @@ Complete only what applies:
 - Pre-production: <!-- Not required, or include the protected run ID -->
 - Candidate artifact/version: <!-- Release PRs only; otherwise N/A -->
 
+## Solution items
+
+- [ ] Implementation and required tests are complete.
+- [ ] Documentation, runbook, diagram, migration note, or operational guidance was updated, or N/A with a reason.
+- [ ] Deployment, rollback, cost, and recovery notes are included when applicable, or N/A.
+
 ## Validation
 
 - Commands and workflow runs:
 - Manual verification and known gaps:
 
 - [ ] Appropriate CI is green for the current PR head.
-- [ ] Documentation was updated, or no documentation change is needed.
 
 ## Review focus
 

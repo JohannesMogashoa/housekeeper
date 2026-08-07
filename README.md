@@ -6,6 +6,8 @@ HouseKeeper is a mobile-first household management application. This repository 
 
 - [Release promotion runbook](docs/development/release-promotion.md) - branch rules, workflow triggers, approvals, artifacts and recovery
 
+- [GitHub project and deployment setup](docs/development/github-project-setup.md) - rulesets, Codex, AWS OIDC, environment variables, secrets and first-time setup
+
 - [Technical recommendation](docs/architecture/technical-recommendation.md) — final stack, architecture, dependency rules, risks and deferred decisions
 - [Architecture decision index](docs/architecture/adr/README.md) — accepted ADR catalogue and implementation status
 - [Foundation backlog](docs/foundation-backlog.md) — ordered execution plan following Discovery 0
