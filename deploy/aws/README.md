@@ -23,14 +23,19 @@ the [GitHub project and deployment setup guide](../../docs/development/github-pr
 - `ApplicationStack`: immutable scan-on-push ECR, non-public ECS Fargate API
   tasks, ALB readiness checks, ECS Exec, separate runtime/migration roles, and
   deployment circuit-breaker rollback.
-- `GitHubOidcStack`: one account-level GitHub OIDC provider shared by both
-  environments.
+- `GitHubOidcStack`: one account-level GitHub OIDC provider for explicitly
+  prefixed environments. Legacy `HouseKeeperDelivery` deployments retain
+  ownership of the existing provider to avoid creating a duplicate.
 - `DeliveryStack`: an environment-scoped deployment role, a CloudFormation
   execution role, and resource-scoped artifact/task permissions.
 - `ObservabilityStack`: CloudWatch logs and alarms, an X-Ray group, and a
   resource group.
 - `BudgetStack`: the account-level monthly cost budget deployed in `us-east-1`,
   where the AWS Budgets CloudFormation resource is available.
+
+GuardDuty is a regional account-level service. Activate its detector outside
+CDK before setting `HOUSEKEEPER_ENABLE_GUARDDUTY=true`; `StorageStack` creates
+only the S3 Malware Protection plan and reuses that activated detector.
 
 ## Local synthesis and review
 
@@ -72,6 +77,7 @@ supplies these variables:
 | `HOUSEKEEPER_PWA_CERTIFICATE_ARN` | `us-east-1` ACM certificate for the CloudFront alias |
 | `HOUSEKEEPER_PWA_DOMAIN_NAME` | DNS name routed to the CloudFront distribution |
 | `HOUSEKEEPER_ENABLE_GUARDDUTY` | `true` only after account-level GuardDuty activation; leave unset/false for shared development |
+| `HOUSEKEEPER_STACK_PREFIX` | `HouseKeeper` for legacy stacks, or `HouseKeeper-<environment>-` for a new isolated environment |
 
 Add `HOUSEKEEPER_SMOKE_ACCESS_TOKEN` as a protected environment secret. It is
 used in memory for authenticated smoke and persistence checks and is never
@@ -84,6 +90,7 @@ HOUSEKEEPER_ENVIRONMENT=shared-development or production
 HOUSEKEEPER_GITHUB_ENVIRONMENT=shared-development or production
 HOUSEKEEPER_AWS_REGION=af-south-1
 HOUSEKEEPER_GITHUB_REPOSITORY=JohannesMogashoa/housekeeper
+HOUSEKEEPER_STACK_PREFIX=<HouseKeeper for legacy, or HouseKeeper-<environment>- for an isolated environment>
 HOUSEKEEPER_API_IMAGE_URI=<ECR repository URI>@<immutable digest>
 HOUSEKEEPER_API_DESIRED_COUNT=0 or 1
 HOUSEKEEPER_API_CERTIFICATE_ARN=<af-south-1 ACM certificate ARN>
@@ -114,16 +121,19 @@ is trusted only by CloudFormation and is passed explicitly by the deployment
 role.
 
 Before the first protected apply, an account administrator bootstraps CDK in
-`af-south-1` and performs the one-time trusted deployment that creates the
+`af-south-1` and `us-east-1`, then performs the one-time trusted deployment
+that creates the
 OIDC and CloudFormation roles:
 
 ~~~powershell
 $env:HOUSEKEEPER_ENVIRONMENT = "shared-development"
 $env:HOUSEKEEPER_GITHUB_ENVIRONMENT = "shared-development"
 $env:HOUSEKEEPER_AWS_REGION = "af-south-1"
+$env:HOUSEKEEPER_STACK_PREFIX = "HouseKeeper-shared-development-"
 $env:HOUSEKEEPER_AWS_ACCOUNT = "<account-id>"
 cd deploy/aws
 cdk bootstrap aws://<account-id>/af-south-1
+cdk bootstrap aws://<account-id>/us-east-1
 ~~~
 
 Record the emitted deployment and CloudFormation role ARNs in the protected
@@ -214,16 +224,17 @@ Shared-development teardown is disposable but requires a reviewed diff:
 $env:HOUSEKEEPER_ENVIRONMENT = "shared-development"
 $env:HOUSEKEEPER_GITHUB_ENVIRONMENT = "shared-development"
 $env:HOUSEKEEPER_AWS_REGION = "af-south-1"
+$env:HOUSEKEEPER_STACK_PREFIX = "HouseKeeper-shared-development-"
 cd deploy/aws
-cdk destroy \
-  HouseKeeper-shared-development-Network \
-  HouseKeeper-shared-development-Data \
-  HouseKeeper-shared-development-Identity \
-  HouseKeeper-shared-development-Storage \
-  HouseKeeper-shared-development-Application \
-  HouseKeeper-shared-development-Delivery \
-  HouseKeeper-shared-development-Observability \
-  HouseKeeper-shared-development-Budget \
+cdk destroy `
+  HouseKeeper-shared-development-Network `
+  HouseKeeper-shared-development-Data `
+  HouseKeeper-shared-development-Identity `
+  HouseKeeper-shared-development-Storage `
+  HouseKeeper-shared-development-Application `
+  HouseKeeper-shared-development-Delivery `
+  HouseKeeper-shared-development-Observability `
+  HouseKeeper-shared-development-Budget `
   --force
 ~~~
 

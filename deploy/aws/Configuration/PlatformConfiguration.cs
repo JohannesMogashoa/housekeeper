@@ -9,6 +9,8 @@ public sealed record PlatformConfiguration
 
     public string Region { get; init; } = DefaultRegion;
 
+    public string StackNamePrefix { get; init; } = "HouseKeeper";
+
     public string? Account { get; init; }
 
     public string GitHubRepository { get; init; } = DefaultGitHubRepository;
@@ -42,6 +44,11 @@ public sealed record PlatformConfiguration
         "production",
         StringComparison.OrdinalIgnoreCase);
 
+    public bool UsesLegacyStackNames => string.Equals(
+        StackNamePrefix,
+        "HouseKeeper",
+        StringComparison.Ordinal);
+
     public bool IsProtectedEnvironment => IsProduction || string.Equals(
         EnvironmentName,
         "shared-development",
@@ -53,6 +60,7 @@ public sealed record PlatformConfiguration
         {
             EnvironmentName = Get("HOUSEKEEPER_ENVIRONMENT", "development"),
             Region = Get("HOUSEKEEPER_AWS_REGION", DefaultRegion),
+            StackNamePrefix = Get("HOUSEKEEPER_STACK_PREFIX", "HouseKeeper"),
             Account = GetOptional("HOUSEKEEPER_AWS_ACCOUNT") ?? GetOptional("CDK_DEFAULT_ACCOUNT"),
             GitHubRepository = Get("HOUSEKEEPER_GITHUB_REPOSITORY", DefaultGitHubRepository),
             GitHubEnvironment = Get(
@@ -86,6 +94,12 @@ public sealed record PlatformConfiguration
         {
             throw new InvalidOperationException(
                 $"HouseKeeper infrastructure must target {DefaultRegion}.");
+        }
+
+        if (string.IsNullOrWhiteSpace(StackNamePrefix))
+        {
+            throw new InvalidOperationException(
+                "HOUSEKEEPER_STACK_PREFIX must not be empty. Use HouseKeeper for legacy stack names or an explicit environment prefix for isolated stacks.");
         }
 
         if (string.IsNullOrWhiteSpace(GitHubRepository) || !GitHubRepository.Contains('/'))

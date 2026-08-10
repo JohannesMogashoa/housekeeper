@@ -36,7 +36,6 @@ public sealed class StorageStack : Stack
             enableCors: true);
 
         MalwareProtectionRole = null;
-        GuardDutyDetector = null;
         MalwareProtectionPlan = null;
 
         if (configuration.EnableGuardDuty)
@@ -72,18 +71,6 @@ public sealed class StorageStack : Stack
                     }));
 
             MalwareProtectionRole = malwareProtectionRole;
-            GuardDutyDetector = new CfnResource(
-                this,
-                "GuardDutyDetector",
-                new CfnResourceProps
-                {
-                    Type = "AWS::GuardDuty::Detector",
-                    Properties = new Dictionary<string, object>
-                    {
-                        ["Enable"] = true
-                    }
-                });
-
             MalwareProtectionPlan = new CfnResource(
                 this,
                 "MalwareProtectionPlan",
@@ -109,7 +96,6 @@ public sealed class StorageStack : Stack
                         }
                     }
                 });
-            MalwareProtectionPlan.Node.AddDependency(GuardDutyDetector);
         }
 
         ICertificate? pwaCertificate = configuration.PwaCertificateArn is null
@@ -244,8 +230,6 @@ public sealed class StorageStack : Stack
     public Bucket AttachmentBucket { get; }
 
     public Role? MalwareProtectionRole { get; }
-
-    public CfnResource? GuardDutyDetector { get; }
 
     public CfnResource? MalwareProtectionPlan { get; }
 

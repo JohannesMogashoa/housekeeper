@@ -20,6 +20,7 @@ public sealed class PlatformStackTests
         Template template = Template.FromStack(stack);
 
         template.ResourceCountIs("AWS::S3::Bucket", 2);
+        template.ResourceCountIs("AWS::GuardDuty::Detector", 0);
         template.HasResource("AWS::CloudFront::OriginAccessControl", new Dictionary<string, object>());
         template.HasResource("AWS::GuardDuty::MalwareProtectionPlan", new Dictionary<string, object>());
         template.HasResource("AWS::S3::BucketPolicy", new Dictionary<string, object>());
@@ -141,17 +142,16 @@ public sealed class PlatformStackTests
             data,
             storage,
             identity);
-        GitHubOidcStack githubOidc = new(app, "GitHubOidc", StackProps());
         DeliveryStack stack = new(
             app,
             "Delivery",
             StackProps(),
             configuration,
             application,
-            storage,
-            githubOidc.Provider);
+            storage);
         Template template = Template.FromStack(stack);
 
+        template.ResourceCountIs("Custom::AWSCDKOpenIdConnectProvider", 1);
         template.HasResourceProperties(
             "AWS::IAM::Role",
             new Dictionary<string, object>

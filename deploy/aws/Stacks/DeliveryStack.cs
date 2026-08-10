@@ -17,10 +17,17 @@ public sealed class DeliveryStack : Stack
         PlatformConfiguration configuration,
         ApplicationStack application,
         StorageStack storage,
-        OpenIdConnectProvider gitHubOidcProvider)
+        OpenIdConnectProvider? gitHubOidcProvider = null)
         : base(scope, id, props)
     {
-        GitHubOidcProvider = gitHubOidcProvider;
+        GitHubOidcProvider = gitHubOidcProvider ?? new OpenIdConnectProvider(
+            this,
+            "GitHubOidcProvider",
+            new OpenIdConnectProviderProps
+            {
+                Url = "https://token.actions.githubusercontent.com",
+                ClientIds = ["sts.amazonaws.com"]
+            });
 
         DeploymentRole = new Role(
             this,

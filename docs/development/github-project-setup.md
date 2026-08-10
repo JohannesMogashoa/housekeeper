@@ -382,19 +382,30 @@ environment-specific values locally:
 $env:HOUSEKEEPER_ENVIRONMENT = "shared-development"
 $env:HOUSEKEEPER_GITHUB_ENVIRONMENT = "shared-development"
 $env:HOUSEKEEPER_AWS_REGION = "af-south-1"
+$env:HOUSEKEEPER_STACK_PREFIX = "HouseKeeper-shared-development-"
 $env:HOUSEKEEPER_AWS_ACCOUNT = "123456789012"
 $env:HOUSEKEEPER_GITHUB_REPOSITORY = "JohannesMogashoa/housekeeper"
 $env:HOUSEKEEPER_API_CERTIFICATE_ARN = "arn:aws:acm:af-south-1:123456789012:certificate/..."
 $env:HOUSEKEEPER_API_DOMAIN_NAME = "housekeeper-api-dev.yngstln.dev"
 $env:HOUSEKEEPER_PWA_CERTIFICATE_ARN = "arn:aws:acm:us-east-1:123456789012:certificate/..."
 $env:HOUSEKEEPER_PWA_DOMAIN_NAME = "housekeeper-dev.yngstln.dev"
+$env:HOUSEKEEPER_COGNITO_CALLBACK_URLS = "https://housekeeper-dev.yngstln.dev/authentication/login-callback"
+$env:HOUSEKEEPER_COGNITO_LOGOUT_URLS = "https://housekeeper-dev.yngstln.dev/authentication/logout-callback"
 ```
+
+The default `HOUSEKEEPER_STACK_PREFIX=HouseKeeper` preserves the physical
+stack names used by the parent revision. Use an environment-specific prefix
+such as `HouseKeeper-shared-development-` only for a new isolated environment
+or after completing an explicit reviewed CloudFormation migration. This keeps
+an existing environment update in place instead of silently creating a second
+set of VPC, database, identity, storage, or ECS stacks.
 
 Bootstrap the account:
 
 ```powershell
 cd deploy/aws
 cdk bootstrap aws://123456789012/af-south-1
+cdk bootstrap aws://123456789012/us-east-1
 ```
 
 Review and synthesize before applying:
@@ -411,8 +422,9 @@ cdk deploy --all --require-approval never
 ```
 
 This creates the environment-scoped GitHub OIDC deployment role and the
-CloudFormation execution role. Later GitHub Actions deployments must use OIDC
-instead of the administrator profile.
+CloudFormation execution role. The `us-east-1` bootstrap is required because
+the account-level AWS Budgets stack is deployed there. Later GitHub Actions
+deployments must use OIDC instead of the administrator profile.
 
 Retrieve the role ARNs from `HouseKeeper-shared-development-Delivery`:
 
@@ -589,6 +601,7 @@ Save the following values independently under both GitHub environments:
 | `HOUSEKEEPER_PWA_CERTIFICATE_ARN` | Issued `us-east-1` ACM certificate ARN | No |
 | `HOUSEKEEPER_PWA_DOMAIN_NAME` | Environment PWA DNS name | No |
 | `HOUSEKEEPER_ENABLE_GUARDDUTY` | `false` for shared-development; `true` for production after account activation | No |
+| `HOUSEKEEPER_STACK_PREFIX` | `HouseKeeper` for legacy stacks, or an explicit environment prefix for a new/migrated environment | No |
 
 The following values are generated or supplied by the workflows and should
 not normally be entered manually as GitHub environment values:
@@ -601,8 +614,8 @@ not normally be entered manually as GitHub environment values:
 | `HOUSEKEEPER_GITHUB_REPOSITORY` | GitHub context |
 | `HOUSEKEEPER_API_IMAGE_URI` | Candidate image promotion |
 | `HOUSEKEEPER_API_DESIRED_COUNT` | Deployment workflow |
-| `HOUSEKEEPER_COGNITO_CALLBACK_URLS` | Deployment workflow after resolving the PWA domain |
-| `HOUSEKEEPER_COGNITO_LOGOUT_URLS` | Deployment workflow after resolving the PWA domain |
+| `HOUSEKEEPER_COGNITO_CALLBACK_URLS` | Protected environment PWA hostname, registered before the first CDK deployment |
+| `HOUSEKEEPER_COGNITO_LOGOUT_URLS` | Protected environment PWA hostname, registered before the first CDK deployment |
 
 The CDK creates the database secret in AWS Secrets Manager. Do not copy the
 database username or password into GitHub. SES remains deferred until the
