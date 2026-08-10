@@ -20,9 +20,25 @@ public sealed class PlatformStackTests
         Template template = Template.FromStack(stack);
 
         template.ResourceCountIs("AWS::S3::Bucket", 2);
+        template.ResourceCountIs("AWS::GuardDuty::Detector", 0);
         template.HasResource("AWS::CloudFront::OriginAccessControl", new Dictionary<string, object>());
         template.HasResource("AWS::GuardDuty::MalwareProtectionPlan", new Dictionary<string, object>());
         template.HasResource("AWS::S3::BucketPolicy", new Dictionary<string, object>());
+    }
+
+    [Fact]
+    public void StorageStackOmitsGuardDutyWhenScanningIsDisabled()
+    {
+        App app = new();
+        StorageStack stack = new(app, "Storage", StackProps(), Configuration() with
+        {
+            EnableGuardDuty = false
+        });
+        Template template = Template.FromStack(stack);
+
+        template.ResourceCountIs("AWS::S3::Bucket", 2);
+        template.ResourceCountIs("AWS::GuardDuty::Detector", 0);
+        template.ResourceCountIs("AWS::GuardDuty::MalwareProtectionPlan", 0);
     }
 
     [Fact]
@@ -57,6 +73,25 @@ public sealed class PlatformStackTests
             });
         template.HasResource("AWS::ECS::Service", new Dictionary<string, object>());
         template.HasResource("AWS::ElasticLoadBalancingV2::LoadBalancer", new Dictionary<string, object>());
+    }
+
+    [Fact]
+    public void DevelopmentDataStackDisablesAutomatedBackupRetentionForFreeTier()
+    {
+        App app = new();
+        PlatformConfiguration configuration = Configuration();
+        NetworkStack network = new(app, "Network", StackProps(), configuration);
+        DataStack stack = new(app, "Data", StackProps(), configuration, network);
+        Template template = Template.FromStack(stack);
+
+        template.HasResourceProperties(
+            "AWS::RDS::DBInstance",
+            new Dictionary<string, object>
+            {
+                ["BackupRetentionPeriod"] = 0,
+                ["DeletionProtection"] = false,
+                ["MultiAZ"] = false
+            });
     }
 
     [Fact]
@@ -116,6 +151,7 @@ public sealed class PlatformStackTests
             storage);
         Template template = Template.FromStack(stack);
 
+        template.ResourceCountIs("Custom::AWSCDKOpenIdConnectProvider", 1);
         template.HasResourceProperties(
             "AWS::IAM::Role",
             new Dictionary<string, object>
@@ -148,7 +184,7 @@ public sealed class PlatformStackTests
     }
 
     [Fact]
-    public void ObservabilityStackCreatesBudgetAndEnvironmentResourceGroup()
+    public void ObservabilityStackCreatesEnvironmentResourceGroup()
     {
         App app = new();
         PlatformConfiguration configuration = Configuration();
@@ -174,8 +210,28 @@ public sealed class PlatformStackTests
             data);
         Template template = Template.FromStack(stack);
 
-        template.HasResource("AWS::Budgets::Budget", new Dictionary<string, object>());
         template.HasResource("AWS::ResourceGroups::Group", new Dictionary<string, object>());
+    }
+
+    [Fact]
+    public void BudgetStackCreatesMonthlyAccountBudget()
+    {
+        App app = new();
+        BudgetStack stack = new(
+            app,
+            "Budget",
+            new StackProps
+            {
+                Env = new Amazon.CDK.Environment
+                {
+                    Account = "123456789012",
+                    Region = "us-east-1"
+                }
+            },
+            Configuration());
+        Template template = Template.FromStack(stack);
+
+        template.HasResource("AWS::Budgets::Budget", new Dictionary<string, object>());
     }
 
     [Fact]
@@ -204,7 +260,10 @@ public sealed class PlatformStackTests
         GitHubEnvironment = "test",
         CognitoDomainPrefix = "housekeeper-test-domain",
         CallbackUrls = ["http://localhost:5136/authentication/login-callback"],
-        LogoutUrls = ["http://localhost:5136/authentication/logout-callback"]
+        LogoutUrls = ["http://localhost:5136/authentication/logout-callback"],
+        EnableGuardDuty = true,
+        PwaCertificateArn = "arn:aws:acm:us-east-1:123456789012:certificate/test",
+        PwaDomainName = "housekeeper-test.example.com"
     };
 
     private static StackProps StackProps() => new()

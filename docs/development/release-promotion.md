@@ -5,6 +5,11 @@ from development to production. The normal product inner loop is cloud-free.
 The only AWS apply paths are the protected `shared-development` and
 `production` GitHub environments.
 
+For first-time repository setup, use the [GitHub project and deployment setup
+guide](github-project-setup.md). This runbook focuses on the promotion and
+recovery steps after the rulesets, Codex integration, environments, and AWS
+values are configured.
+
 ## Branches, tags, and protection
 
 The lifecycle is:

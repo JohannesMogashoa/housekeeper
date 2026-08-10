@@ -1,4 +1,5 @@
 using Amazon.CDK;
+using Amazon.CDK.AWS.IAM;
 using Cdklabs.CdkNag;
 
 using HouseKeeper.Infrastructure.Configuration;
@@ -16,14 +17,28 @@ Amazon.CDK.Environment? environment = configuration.Account is null
         Region = configuration.Region
     };
 
-NetworkStack network = new(app, "HouseKeeperNetwork", new StackProps { Env = environment }, configuration);
-DataStack data = new(app, "HouseKeeperData", new StackProps { Env = environment }, configuration, network);
-IdentityStack identity = new(app, "HouseKeeperIdentity", new StackProps { Env = environment }, configuration);
-StorageStack storage = new(app, "HouseKeeperStorage", new StackProps { Env = environment }, configuration);
+OpenIdConnectProvider? githubOidcProvider = null;
+if (!configuration.UsesLegacyStackNames)
+{
+    GitHubOidcStack githubOidc = new(
+        app,
+        "HouseKeeperGitHubOidc",
+        new StackProps
+        {
+            Env = environment,
+            StackName = "HouseKeeper-GitHubOidc"
+        });
+    githubOidcProvider = githubOidc.Provider;
+}
+
+NetworkStack network = new(app, "HouseKeeperNetwork", EnvironmentStackProps("Network"), configuration);
+DataStack data = new(app, "HouseKeeperData", EnvironmentStackProps("Data"), configuration, network);
+IdentityStack identity = new(app, "HouseKeeperIdentity", EnvironmentStackProps("Identity"), configuration);
+StorageStack storage = new(app, "HouseKeeperStorage", EnvironmentStackProps("Storage"), configuration);
 ApplicationStack application = new(
     app,
     "HouseKeeperApplication",
-    new StackProps { Env = environment },
+    EnvironmentStackProps("Application"),
     configuration,
     network,
     data,
@@ -32,16 +47,40 @@ ApplicationStack application = new(
 DeliveryStack delivery = new(
     app,
     "HouseKeeperDelivery",
-    new StackProps { Env = environment },
+    EnvironmentStackProps("Delivery"),
     configuration,
     application,
-    storage);
+    storage,
+    githubOidcProvider);
 ObservabilityStack observability = new(
     app,
     "HouseKeeperObservability",
-    new StackProps { Env = environment },
+    EnvironmentStackProps("Observability"),
     configuration,
     application,
     data);
+BudgetStack budget = new(
+    app,
+    "HouseKeeperBudget",
+    BudgetStackProps(),
+    configuration);
 
 app.Synth();
+
+StackProps EnvironmentStackProps(string suffix) => new()
+{
+    Env = environment,
+    StackName = $"{configuration.StackNamePrefix}{suffix}"
+};
+
+StackProps BudgetStackProps() => new()
+{
+    Env = configuration.Account is null
+        ? new Amazon.CDK.Environment { Region = "us-east-1" }
+        : new Amazon.CDK.Environment
+        {
+            Account = configuration.Account,
+            Region = "us-east-1"
+        },
+    StackName = $"{configuration.StackNamePrefix}Budget"
+};

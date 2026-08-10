@@ -16,10 +16,11 @@ public sealed class DeliveryStack : Stack
         StackProps props,
         PlatformConfiguration configuration,
         ApplicationStack application,
-        StorageStack storage)
+        StorageStack storage,
+        OpenIdConnectProvider? gitHubOidcProvider = null)
         : base(scope, id, props)
     {
-        GitHubOidcProvider = new OpenIdConnectProvider(
+        GitHubOidcProvider = gitHubOidcProvider ?? new OpenIdConnectProvider(
             this,
             "GitHubOidcProvider",
             new OpenIdConnectProviderProps

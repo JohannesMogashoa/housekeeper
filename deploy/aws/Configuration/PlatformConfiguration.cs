@@ -9,6 +9,8 @@ public sealed record PlatformConfiguration
 
     public string Region { get; init; } = DefaultRegion;
 
+    public string StackNamePrefix { get; init; } = "HouseKeeper";
+
     public string? Account { get; init; }
 
     public string GitHubRepository { get; init; } = DefaultGitHubRepository;
@@ -18,6 +20,12 @@ public sealed record PlatformConfiguration
     public string? ApiCertificateArn { get; init; }
 
     public string? ApiDomainName { get; init; }
+
+    public string? PwaCertificateArn { get; init; }
+
+    public string? PwaDomainName { get; init; }
+
+    public bool EnableGuardDuty { get; init; }
 
     public string? ApiImageUri { get; init; }
 
@@ -36,6 +44,11 @@ public sealed record PlatformConfiguration
         "production",
         StringComparison.OrdinalIgnoreCase);
 
+    public bool UsesLegacyStackNames => string.Equals(
+        StackNamePrefix,
+        "HouseKeeper",
+        StringComparison.Ordinal);
+
     public bool IsProtectedEnvironment => IsProduction || string.Equals(
         EnvironmentName,
         "shared-development",
@@ -47,6 +60,7 @@ public sealed record PlatformConfiguration
         {
             EnvironmentName = Get("HOUSEKEEPER_ENVIRONMENT", "development"),
             Region = Get("HOUSEKEEPER_AWS_REGION", DefaultRegion),
+            StackNamePrefix = Get("HOUSEKEEPER_STACK_PREFIX", "HouseKeeper"),
             Account = GetOptional("HOUSEKEEPER_AWS_ACCOUNT") ?? GetOptional("CDK_DEFAULT_ACCOUNT"),
             GitHubRepository = Get("HOUSEKEEPER_GITHUB_REPOSITORY", DefaultGitHubRepository),
             GitHubEnvironment = Get(
@@ -54,6 +68,9 @@ public sealed record PlatformConfiguration
                 Get("HOUSEKEEPER_ENVIRONMENT", "development")),
             ApiCertificateArn = GetOptional("HOUSEKEEPER_API_CERTIFICATE_ARN"),
             ApiDomainName = GetOptional("HOUSEKEEPER_API_DOMAIN_NAME"),
+            PwaCertificateArn = GetOptional("HOUSEKEEPER_PWA_CERTIFICATE_ARN"),
+            PwaDomainName = GetOptional("HOUSEKEEPER_PWA_DOMAIN_NAME"),
+            EnableGuardDuty = GetBool("HOUSEKEEPER_ENABLE_GUARDDUTY", false),
             ApiImageUri = GetOptional("HOUSEKEEPER_API_IMAGE_URI"),
             ApiDesiredCount = GetInt("HOUSEKEEPER_API_DESIRED_COUNT", 1),
             CognitoDomainPrefix = Get(
@@ -77,6 +94,12 @@ public sealed record PlatformConfiguration
         {
             throw new InvalidOperationException(
                 $"HouseKeeper infrastructure must target {DefaultRegion}.");
+        }
+
+        if (string.IsNullOrWhiteSpace(StackNamePrefix))
+        {
+            throw new InvalidOperationException(
+                "HOUSEKEEPER_STACK_PREFIX must not be empty. Use HouseKeeper for legacy stack names or an explicit environment prefix for isolated stacks.");
         }
 
         if (string.IsNullOrWhiteSpace(GitHubRepository) || !GitHubRepository.Contains('/'))
@@ -111,10 +134,18 @@ public sealed record PlatformConfiguration
 
         if (IsProtectedEnvironment &&
             (string.IsNullOrWhiteSpace(ApiCertificateArn) ||
-             string.IsNullOrWhiteSpace(ApiDomainName)))
+             string.IsNullOrWhiteSpace(ApiDomainName) ||
+             string.IsNullOrWhiteSpace(PwaCertificateArn) ||
+             string.IsNullOrWhiteSpace(PwaDomainName)))
         {
             throw new InvalidOperationException(
-                "Protected environments require HOUSEKEEPER_API_CERTIFICATE_ARN and HOUSEKEEPER_API_DOMAIN_NAME.");
+                "Protected environments require API and PWA certificate and domain configuration.");
+        }
+
+        if (IsProduction && !EnableGuardDuty)
+        {
+            throw new InvalidOperationException(
+                "Production requires HOUSEKEEPER_ENABLE_GUARDDUTY=true after GuardDuty has been activated for the account.");
         }
     }
 
@@ -135,6 +166,16 @@ public sealed record PlatformConfiguration
             : int.TryParse(value, out int parsed)
                 ? parsed
                 : throw new InvalidOperationException($"{name} must be a valid integer.");
+    }
+
+    private static bool GetBool(string name, bool fallback)
+    {
+        string? value = GetOptional(name);
+        return value is null
+            ? fallback
+            : bool.TryParse(value, out bool parsed)
+                ? parsed
+                : throw new InvalidOperationException($"{name} must be true or false.");
     }
 
     private static string[] GetList(string name, string fallback) =>
