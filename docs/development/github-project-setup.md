@@ -498,6 +498,19 @@ The protected deployment uses `HOUSEKEEPER_SMOKE_ACCESS_TOKEN` to call the API
 smoke and persistence checks. It must be a real Cognito access token, not a
 random value and not an ID token.
 
+On Windows, the repository helper performs the prerequisite checks, creates or
+confirms the disposable smoke user, opens the PKCE Hosted UI login, exchanges
+the authorization code locally, saves only the access token to the GitHub
+environment secret, and verifies the secret by name without reading its value:
+
+```powershell
+pwsh ./scripts/setup-smoke-token.ps1
+```
+
+Use `-SkipUserProvisioning` when the smoke user already exists, and `-Force` if
+an existing GitHub smoke secret should be replaced without prompting. The
+helper requires the PWA DNS CNAME to resolve before starting the OAuth flow.
+
 Retrieve the Cognito outputs:
 
 ```powershell
