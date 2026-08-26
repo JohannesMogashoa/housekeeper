@@ -1,0 +1,24 @@
+{
+  "name": "housekeeper",
+  "private": true,
+  "packageManager": "pnpm@11.23.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "pnpm": ">=11.0.0"
+  },
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
+    "db:generate": "pnpm --filter @housekeeper/db db:generate",
+    "db:push": "pnpm --filter @housekeeper/db db:push",
+    "db:studio": "pnpm --filter @housekeeper/db db:studio",
+    "infra:up": "docker compose -f infra/local/compose.yaml up -d",
+    "infra:down": "docker compose -f infra/local/compose.yaml down"
+  },
+  "devDependencies": {
+    "turbo": "2.10.12",
+    "typescript": "7.0.2"
+  }
+}
