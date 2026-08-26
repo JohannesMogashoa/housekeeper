@@ -10,13 +10,13 @@
 
 ```bash
 pnpm install
-cp .env.example .env
 pnpm infra:up
+cp apps/web/.env.example apps/web/.env.local
 pnpm db:push
 pnpm dev
 ```
 
-PostgreSQL is exposed on `localhost:5432` with the local-only credentials from `.env.example`.
+PostgreSQL is exposed on `localhost:5432` with local-only credentials. Next.js reads `apps/web/.env.local`; a root `.env` is intentionally not used because Turbo executes the web task from the application workspace.
 
 ## Workspace commands
 
@@ -46,6 +46,8 @@ pnpm db:studio
 ```
 
 `db:push` is a local restructuring convenience only. Do not use it as a production deployment mechanism.
+
+The PostgreSQL 18 official image uses `/var/lib/postgresql` as its volume target; do not change the Compose mount back to `/var/lib/postgresql/data` unless the image major version is also changed and the migration implications are understood.
 
 Stop local infrastructure with:
 

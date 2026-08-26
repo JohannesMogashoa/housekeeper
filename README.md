@@ -46,28 +46,23 @@ Requirements:
 - pnpm 11+
 - Docker with Compose
 
-Start PostgreSQL:
-
-```bash
-pnpm infra:up
-```
-
-Create the local environment file:
-
-```bash
-cp .env.example .env
-```
-
-Install dependencies and apply the current schema during this scaffold phase:
+Install dependencies and start PostgreSQL:
 
 ```bash
 pnpm install
-pnpm db:push
+pnpm infra:up
 ```
 
-Start the workspace:
+Create the Next.js local environment file where Next.js will actually load it:
 
 ```bash
+cp apps/web/.env.example apps/web/.env.local
+```
+
+Apply the current schema during this scaffold phase and start the workspace:
+
+```bash
+pnpm db:push
 pnpm dev
 ```
 
@@ -101,6 +96,8 @@ pnpm db:generate
 pnpm db:push
 pnpm db:studio
 ```
+
+PostgreSQL 18 changed the official container's data-volume location. Local Compose therefore mounts the named volume at `/var/lib/postgresql`, not the pre-18 `/var/lib/postgresql/data` path.
 
 ## Validation
 

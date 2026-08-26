@@ -14,7 +14,7 @@ services:
       timeout: 5s
       retries: 10
     volumes:
-      - housekeeper-postgres:/var/lib/postgresql/data
+      - housekeeper-postgres:/var/lib/postgresql
 
 volumes:
   housekeeper-postgres:
