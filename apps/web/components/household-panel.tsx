@@ -11,6 +11,7 @@ export function HouseholdPanel() {
   const [name, setName] = useState("");
   const utils = trpc.useUtils();
   const households = trpc.households.list.useQuery();
+  const householdItems = households.data ?? [];
   const createHousehold = trpc.households.create.useMutation({
     onSuccess: async () => {
       setName("");
@@ -43,13 +44,13 @@ export function HouseholdPanel() {
                 Start PostgreSQL and run pnpm db:push, then retry this page.
               </p>
             </div>
-          ) : households.data.length === 0 ? (
+          ) : householdItems.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No household yet. Create the first one to establish the owner membership.
             </p>
           ) : (
             <ul className="space-y-3">
-              {households.data.map((household) => (
+              {householdItems.map((household) => (
                 <li key={household.id} className="rounded-lg border p-4">
                   <p className="font-medium">{household.name}</p>
                   <p className="mt-1 text-xs text-muted-foreground">

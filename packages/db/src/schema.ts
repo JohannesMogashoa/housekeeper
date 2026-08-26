@@ -1,41 +1,57 @@
 import {
+  foreignKey,
   index,
-  pgEnum,
-  pgTable,
+  pgSchema,
+  primaryKey,
   timestamp,
-  uniqueIndex,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
 
-export const householdRole = pgEnum("household_role", ["owner", "member"]);
+// Keep the physical schema compatible with the existing EF Core migration.
+// This prevents the TypeScript port from silently creating parallel public
+// tables for data that already lives under PostgreSQL schema `households`.
+export const householdsSchema = pgSchema("households");
 
-export const households = pgTable("households", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  name: varchar("name", { length: 120 }).notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
-    .defaultNow()
-    .notNull(),
-});
-
-export const householdMembers = pgTable(
-  "household_members",
+export const households = householdsSchema.table(
+  "households",
   {
-    id: uuid("id").defaultRandom().primaryKey(),
-    householdId: uuid("household_id")
-      .notNull()
-      .references(() => households.id, { onDelete: "cascade" }),
-    userId: varchar("user_id", { length: 255 }).notNull(),
-    role: householdRole("role").notNull().default("member"),
-    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
+    id: uuid("Id").notNull(),
+    name: varchar("Name", { length: 120 }).notNull(),
+    createdAtUtc: timestamp("CreatedAtUtc", {
+      withTimezone: true,
+      mode: "date",
+    }).notNull(),
   },
   (table) => [
-    uniqueIndex("household_members_household_user_uq").on(
-      table.householdId,
-      table.userId,
-    ),
-    index("household_members_user_idx").on(table.userId),
+    primaryKey({
+      name: "PK_households",
+      columns: [table.id],
+    }),
+  ],
+);
+
+export const householdMembers = householdsSchema.table(
+  "household_members",
+  {
+    householdId: uuid("HouseholdId").notNull(),
+    subject: varchar("Subject", { length: 200 }).notNull(),
+    role: varchar("Role", { length: 32 }).notNull(),
+    joinedAtUtc: timestamp("JoinedAtUtc", {
+      withTimezone: true,
+      mode: "date",
+    }).notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "PK_household_members",
+      columns: [table.householdId, table.subject],
+    }),
+    foreignKey({
+      name: "FK_household_members_households_HouseholdId",
+      columns: [table.householdId],
+      foreignColumns: [households.id],
+    }).onDelete("cascade"),
+    index("IX_household_members_Subject").on(table.subject),
   ],
 );

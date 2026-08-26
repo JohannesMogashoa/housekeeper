@@ -60,15 +60,9 @@ Extract shared domain modules only when at least two features need the same beha
 
 PostgreSQL is the durable source of truth. Drizzle owns table/schema declarations and typed queries. Multi-write invariants use database transactions.
 
-The initial port contains:
+The Households port intentionally maps the already-deployed physical model rather than inventing a second schema: PostgreSQL schema `households`, the existing quoted EF column names, the composite household-member key, the existing subject index, `Owner` role value, and cascade foreign key are preserved.
 
-- `households`
-- `household_members`
-- an owner/member role enum
-- unique membership per household/user
-- an index supporting membership-scoped household lookup
-
-Local development may use `drizzle-kit push` while the schema is being reshaped. Production deployment must switch to reviewed, checked-in migrations before release.
+That physical compatibility does **not** make EF migration history compatible with Drizzle migration history. Existing environments require a one-time baseline before Drizzle migrations become authoritative; see ADR-0002.
 
 ## API boundary
 
@@ -79,6 +73,8 @@ tRPC is an internal typed API boundary, not an excuse to collapse server and cli
 - input validation;
 - transactions/application orchestration;
 - transport-safe output shapes.
+
+Dates are emitted across the current tRPC boundary as ISO-8601 strings rather than relying on an implicit JSON `Date` representation.
 
 If HouseKeeper later exposes a public or third-party API, add a REST/OpenAPI adapter over application capabilities rather than exposing internal tRPC semantics as the public contract.
 

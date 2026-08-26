@@ -79,17 +79,17 @@ The migration ports the existing Households capability first because it is the o
 - household names are trimmed and constrained to 2–120 characters;
 - creating a household also creates its owner membership in one transaction;
 - listing households is constrained by the current user's membership;
-- PostgreSQL owns generated IDs and creation timestamps.
+- IDs, timestamps, role casing, schema name, column names, key shape, indexes, and foreign-key behavior remain compatible with the existing EF Core physical model.
 
 Placeholder .NET modules were not mechanically reproduced. Tasks, maintenance, shopping, notifications, and attachments should be added as real TypeScript vertical slices as their requirements are implemented.
 
 ## Database workflow
 
-During the restructuring branch, `pnpm db:push` is optimized for local iteration. `pnpm db:generate` proves that Drizzle can derive migrations from the checked-in schema.
+During the restructuring branch, `pnpm db:push` is optimized for local iteration. `pnpm db:generate` validates that Drizzle can derive migration SQL from the checked-in schema.
 
-Before the first production deployment, generated migrations must be reviewed and committed, and deployment must execute migrations as a distinct release step. Production should never depend on `drizzle-kit push`.
+**Do not apply Drizzle's first generated migration to an existing EF-managed HouseKeeper database.** Drizzle has no knowledge of the EF migration-history table even though the physical schema is intentionally compatible. The migration system needs an explicit baseline before production or shared-development is switched from EF to Drizzle. See ADR-0002.
 
-Useful commands:
+Useful commands for disposable/local databases:
 
 ```bash
 pnpm db:generate
@@ -111,4 +111,4 @@ GitHub CI performs schema generation, typechecking, tests, and a production buil
 
 ## Architectural direction
 
-See [`docs/architecture/technical-recommendation.md`](docs/architecture/technical-recommendation.md) and ADR-0001 for the rationale and dependency rules behind the migration.
+See [`docs/architecture/technical-recommendation.md`](docs/architecture/technical-recommendation.md), ADR-0001, and ADR-0002 for the migration rationale and dependency rules.
