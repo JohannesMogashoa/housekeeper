@@ -18,6 +18,7 @@
     "infra:down": "docker compose -f infra/local/compose.yaml down"
   },
   "devDependencies": {
+    "@types/node": "^24.0.0",
     "turbo": "2.10.12",
     "typescript": "7.0.2"
   }
